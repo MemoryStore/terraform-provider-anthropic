@@ -95,6 +95,169 @@ func TestMapAgentResponseToState_customToolInputSchema(t *testing.T) {
 	}
 }
 
+const configuredInputSchemaWithAdditionalProperties = `{"type":"object","properties":{"email":{"type":"string"}},"required":["email"],"additionalProperties":false}`
+
+func TestCustomToolInputSchemaParam_preservesAdditionalProperties(t *testing.T) {
+	t.Parallel()
+
+	schema, err := customToolInputSchemaParam(configuredInputSchemaWithAdditionalProperties)
+	if err != nil {
+		t.Fatalf("customToolInputSchemaParam: %s", err)
+	}
+	raw, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("marshal input schema param: %s", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal marshaled schema: %s", err)
+	}
+	if got["additionalProperties"] != false {
+		t.Fatalf("marshaled schema = %s, want additionalProperties=false", raw)
+	}
+}
+
+func TestBuildToolsParams_preservesAdditionalProperties(t *testing.T) {
+	t.Parallel()
+
+	tool, diags := types.ObjectValue(agentCustomToolAttrTypes, map[string]attr.Value{
+		"name":         types.StringValue("lookup_user"),
+		"description":  types.StringValue("Look up a user"),
+		"input_schema": jsontypes.NewNormalizedValue(configuredInputSchemaWithAdditionalProperties),
+	})
+	if diags.HasError() {
+		t.Fatalf("tool object: %+v", diags)
+	}
+	toolsList, diags := types.ListValue(types.ObjectType{AttrTypes: agentCustomToolAttrTypes}, []attr.Value{tool})
+	if diags.HasError() {
+		t.Fatalf("tools list: %+v", diags)
+	}
+
+	built, diags := buildToolsParams(context.Background(), AgentResourceModel{CustomTools: toolsList})
+	if diags.HasError() {
+		t.Fatalf("buildToolsParams: %+v", diags)
+	}
+	if len(built) != 1 || built[0].OfCustom == nil {
+		t.Fatalf("expected one custom tool, got %+v", built)
+	}
+	raw, err := json.Marshal(built[0].OfCustom.InputSchema)
+	if err != nil {
+		t.Fatalf("marshal: %s", err)
+	}
+	if !strings.Contains(string(raw), `"additionalProperties":false`) {
+		t.Fatalf("request payload dropped additionalProperties: %s", raw)
+	}
+}
+
+func TestMapAgentResponseToState_keepsConfiguredAdditionalProperties(t *testing.T) {
+	t.Parallel()
+
+	const apiInputSchema = `{"type":"object","properties":{"email":{"type":"string"}},"required":["email"]}`
+	data := AgentResourceModel{CustomTools: mustCustomToolsList(t, "lookup_user", "Look up a user", configuredInputSchemaWithAdditionalProperties)}
+
+	agentJSON := `{
+		"id": "agent_123",
+		"name": "test",
+		"model": {"id": "claude-sonnet-4-6"},
+		"version": 1,
+		"created_at": "2026-01-01T00:00:00Z",
+		"updated_at": "2026-01-01T00:00:00Z",
+		"tools": [
+			{
+				"type": "custom",
+				"name": "lookup_user",
+				"description": "Look up a user",
+				"input_schema": ` + apiInputSchema + `
+			}
+		]
+	}`
+	var agent anthropic.BetaManagedAgentsAgent
+	if err := json.Unmarshal([]byte(agentJSON), &agent); err != nil {
+		t.Fatalf("unmarshal agent: %s", err)
+	}
+	if diags := mapAgentResponseToState(context.Background(), &agent, &data); diags.HasError() {
+		t.Fatalf("mapAgentResponseToState: %+v", diags)
+	}
+
+	got := firstCustomToolInputSchema(t, data)
+	planned := jsontypes.NewNormalizedValue(configuredInputSchemaWithAdditionalProperties)
+	equal, diags := planned.StringSemanticEquals(context.Background(), got)
+	if diags.HasError() {
+		t.Fatalf("semantic equals: %+v", diags)
+	}
+	if !equal {
+		t.Fatalf("state input_schema = %s, want configured schema with additionalProperties", got.ValueString())
+	}
+}
+
+func TestMapAgentResponseToState_usesAPIWhenPropertiesDiverge(t *testing.T) {
+	t.Parallel()
+
+	const apiInputSchema = `{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`
+	data := AgentResourceModel{CustomTools: mustCustomToolsList(t, "lookup_user", "Look up a user", configuredInputSchemaWithAdditionalProperties)}
+
+	agentJSON := `{
+		"id": "agent_123",
+		"name": "test",
+		"model": {"id": "claude-sonnet-4-6"},
+		"version": 1,
+		"created_at": "2026-01-01T00:00:00Z",
+		"updated_at": "2026-01-01T00:00:00Z",
+		"tools": [
+			{
+				"type": "custom",
+				"name": "lookup_user",
+				"description": "Look up a user",
+				"input_schema": ` + apiInputSchema + `
+			}
+		]
+	}`
+	var agent anthropic.BetaManagedAgentsAgent
+	if err := json.Unmarshal([]byte(agentJSON), &agent); err != nil {
+		t.Fatalf("unmarshal agent: %s", err)
+	}
+	if diags := mapAgentResponseToState(context.Background(), &agent, &data); diags.HasError() {
+		t.Fatalf("mapAgentResponseToState: %+v", diags)
+	}
+
+	got := firstCustomToolInputSchema(t, data)
+	if strings.Contains(got.ValueString(), "additionalProperties") {
+		t.Fatalf("expected API schema when properties diverge, got %s", got.ValueString())
+	}
+	if !strings.Contains(got.ValueString(), `"id"`) {
+		t.Fatalf("expected API property id, got %s", got.ValueString())
+	}
+}
+
+func mustCustomToolsList(t *testing.T, name, description, schema string) types.List {
+	t.Helper()
+	tool, diags := types.ObjectValue(agentCustomToolAttrTypes, map[string]attr.Value{
+		"name":         types.StringValue(name),
+		"description":  types.StringValue(description),
+		"input_schema": jsontypes.NewNormalizedValue(schema),
+	})
+	if diags.HasError() {
+		t.Fatalf("tool object: %+v", diags)
+	}
+	list, diags := types.ListValue(types.ObjectType{AttrTypes: agentCustomToolAttrTypes}, []attr.Value{tool})
+	if diags.HasError() {
+		t.Fatalf("tools list: %+v", diags)
+	}
+	return list
+}
+
+func firstCustomToolInputSchema(t *testing.T, data AgentResourceModel) jsontypes.Normalized {
+	t.Helper()
+	var tools []agentCustomToolModel
+	if diags := data.CustomTools.ElementsAs(context.Background(), &tools, false); diags.HasError() {
+		t.Fatalf("read custom tools: %+v", diags)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("expected 1 custom tool, got %d", len(tools))
+	}
+	return tools[0].InputSchema
+}
+
 func TestMapAgentResponseToState_effortAndMultiagentSelf(t *testing.T) {
 	t.Parallel()
 

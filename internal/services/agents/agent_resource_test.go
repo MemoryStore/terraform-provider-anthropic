@@ -278,7 +278,8 @@ resource "anthropic_agent" "test_custom_tools" {
             description = "The user's email address"
           }
         }
-        required = ["email"]
+        required             = ["email"]
+        additionalProperties = false
       })
     }
   ]

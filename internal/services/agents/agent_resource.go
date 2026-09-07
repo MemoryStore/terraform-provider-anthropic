@@ -483,9 +483,11 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 							MarkdownDescription: "Description shown to the agent. 1-1024 characters.",
 						},
 						"input_schema": schema.StringAttribute{
-							Optional:            true,
-							CustomType:          jsontypes.NormalizedType{},
-							MarkdownDescription: "JSON Schema for the tool's input parameters. Use `jsonencode()` to build the value.",
+							Optional:   true,
+							CustomType: jsontypes.NormalizedType{},
+							MarkdownDescription: "JSON Schema for the tool's input parameters. Use `jsonencode()` to build the value. " +
+								"Keywords beyond `type`/`properties`/`required` (for example `additionalProperties`) are forwarded as-is. " +
+								"If the API omits them on read, the provider keeps the configured JSON when the rest of the schema matches.",
 						},
 					},
 				},
@@ -1143,8 +1145,8 @@ func buildToolsParams(ctx context.Context, data AgentResourceModel) ([]anthropic
 				Type:        anthropic.BetaManagedAgentsCustomToolParamsTypeCustom,
 			}
 			if !t.InputSchema.IsNull() && !t.InputSchema.IsUnknown() {
-				var schema anthropic.BetaManagedAgentsCustomToolInputSchemaParam
-				if err := json.Unmarshal([]byte(t.InputSchema.ValueString()), &schema); err != nil {
+				schema, err := customToolInputSchemaParam(t.InputSchema.ValueString())
+				if err != nil {
 					diags.AddError("Invalid input_schema", fmt.Sprintf("Failed to parse input_schema JSON for tool %q: %s", t.Name.ValueString(), err))
 					return nil, diags
 				}
@@ -1155,6 +1157,98 @@ func buildToolsParams(ctx context.Context, data AgentResourceModel) ([]anthropic
 	}
 
 	return tools, diags
+}
+
+// customToolInputSchemaParam keeps the user's JSON Schema bytes intact, including
+// keywords the SDK param struct does not declare (additionalProperties, $schema,
+// unevaluatedProperties, …). encoding/json into BetaManagedAgentsCustomToolInputSchemaParam
+// drops those keys because ExtraFields is tagged json:"-".
+func customToolInputSchemaParam(raw string) (anthropic.BetaManagedAgentsCustomToolInputSchemaParam, error) {
+	var compact json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &compact); err != nil {
+		return anthropic.BetaManagedAgentsCustomToolInputSchemaParam{}, err
+	}
+	return param.Override[anthropic.BetaManagedAgentsCustomToolInputSchemaParam](compact), nil
+}
+
+func configuredCustomToolInputSchemas(ctx context.Context, customTools types.List) (map[string]jsontypes.Normalized, diag.Diagnostics) {
+	out := make(map[string]jsontypes.Normalized)
+	if customTools.IsNull() || customTools.IsUnknown() {
+		return out, nil
+	}
+	var tools []agentCustomToolModel
+	diags := customTools.ElementsAs(ctx, &tools, false)
+	if diags.HasError() {
+		return out, diags
+	}
+	for _, tool := range tools {
+		if tool.Name.IsNull() || tool.Name.IsUnknown() || tool.InputSchema.IsNull() || tool.InputSchema.IsUnknown() {
+			continue
+		}
+		out[tool.Name.ValueString()] = tool.InputSchema
+	}
+	return out, diags
+}
+
+// preserveConfiguredInputSchema keeps the configured JSON Schema when the API
+// payload is a subset of it. The Managed Agents API (and the typed SDK param)
+// only persist type/properties/required, so extra keywords would otherwise
+// vanish after apply and fail with "Provider produced inconsistent result".
+func preserveConfiguredInputSchema(configured, api jsontypes.Normalized) jsontypes.Normalized {
+	if configured.IsNull() || configured.IsUnknown() {
+		return api
+	}
+	if api.IsNull() || api.IsUnknown() {
+		return configured
+	}
+	if jsonObjectCovers(configured.ValueString(), api.ValueString()) {
+		return configured
+	}
+	return api
+}
+
+func jsonObjectCovers(configured, api string) bool {
+	var cfg, got any
+	if json.Unmarshal([]byte(configured), &cfg) != nil || json.Unmarshal([]byte(api), &got) != nil {
+		return false
+	}
+	gotMap, ok := got.(map[string]any)
+	if !ok || len(gotMap) == 0 {
+		return false
+	}
+	return jsonValueCovers(cfg, got)
+}
+
+func jsonValueCovers(configured, api any) bool {
+	switch apiVal := api.(type) {
+	case map[string]any:
+		cfgMap, ok := configured.(map[string]any)
+		if !ok {
+			return false
+		}
+		for key, value := range apiVal {
+			configuredValue, exists := cfgMap[key]
+			if !exists || !jsonValueCovers(configuredValue, value) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		cfgArr, ok := configured.([]any)
+		if !ok || len(cfgArr) != len(apiVal) {
+			return false
+		}
+		for i := range apiVal {
+			if !jsonValueCovers(cfgArr[i], apiVal[i]) {
+				return false
+			}
+		}
+		return true
+	default:
+		configuredJSON, errCfg := json.Marshal(configured)
+		apiJSON, errAPI := json.Marshal(api)
+		return errCfg == nil && errAPI == nil && string(configuredJSON) == string(apiJSON)
+	}
 }
 
 // mapAgentResponseToState maps the API response to the Terraform state model.
@@ -1289,6 +1383,9 @@ func mapAgentResponseToState(ctx context.Context, agent *anthropic.BetaManagedAg
 		data.MCPToolsets = types.ListNull(types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes})
 	}
 
+	configuredSchemas, d := configuredCustomToolInputSchemas(ctx, data.CustomTools)
+	diags.Append(d...)
+
 	// Custom tools
 	if len(apiCustomTools) > 0 {
 		toolObjs := make([]attr.Value, len(apiCustomTools))
@@ -1296,6 +1393,9 @@ func mapAgentResponseToState(ctx context.Context, agent *anthropic.BetaManagedAg
 			inputSchema := jsontypes.NewNormalizedNull()
 			if raw := t.InputSchema.RawJSON(); raw != "" && raw != "null" {
 				inputSchema = jsontypes.NewNormalizedValue(raw)
+			}
+			if configured, ok := configuredSchemas[t.Name]; ok {
+				inputSchema = preserveConfiguredInputSchema(configured, inputSchema)
 			}
 			obj, d := types.ObjectValue(agentCustomToolAttrTypes, map[string]attr.Value{
 				"name":         types.StringValue(t.Name),

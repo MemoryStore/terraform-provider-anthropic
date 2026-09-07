@@ -266,6 +266,8 @@ if raw := t.SomeField.RawJSON(); raw != "" && raw != "null" {
 }
 ```
 
+Do **not** `encoding/json.Unmarshal` a JSON Schema into a typed SDK param that only has `type`/`properties`/`required`. That silently drops `additionalProperties` (the param's `ExtraFields` is tagged `json:"-"`) and Terraform then fails apply with "Provider produced inconsistent result". Send the raw bytes with `param.Override[Param](json.RawMessage(raw))`. On map-to-state, keep the configured `jsontypes.Normalized` value when it is a JSON-object superset of the API payload, so keywords the API omits do not cause a plan/state mismatch.
+
 Import: `"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"` (dependency: `terraform-plugin-framework-jsontypes v0.2.0`).
 
 Do **not** use `json.Marshal(sdkStruct)` to populate a string attribute in state — SDK upgrades can change struct field order or add new fields, silently breaking plan/apply consistency.
