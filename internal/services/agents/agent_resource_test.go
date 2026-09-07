@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
 	acctest "github.com/ippontech/terraform-provider-anthropic/internal/acctest"
@@ -142,6 +143,7 @@ func TestAccAgentResource_withCustomTools(t *testing.T) {
 					resource.TestCheckResourceAttr("anthropic_agent.test_custom_tools", "custom_tools.#", "1"),
 					resource.TestCheckResourceAttr("anthropic_agent.test_custom_tools", "custom_tools.0.name", "lookup_user"),
 					resource.TestCheckResourceAttr("anthropic_agent.test_custom_tools", "custom_tools.0.description", "Look up a user by their email address"),
+					resource.TestMatchResourceAttr("anthropic_agent.test_custom_tools", "custom_tools.0.input_schema", regexp.MustCompile(`"additionalProperties"\s*:\s*false`)),
 				),
 			},
 		},
@@ -278,7 +280,8 @@ resource "anthropic_agent" "test_custom_tools" {
             description = "The user's email address"
           }
         }
-        required = ["email"]
+        required             = ["email"]
+        additionalProperties = false
       })
     }
   ]

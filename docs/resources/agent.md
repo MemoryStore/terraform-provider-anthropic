@@ -213,7 +213,7 @@ Required:
 
 Optional:
 
-- `input_schema` (String) JSON Schema for the tool's input parameters. Use `jsonencode()` to build the value.
+- `input_schema` (String) JSON Schema for the tool's input parameters. Use `jsonencode()` to build the value. Keywords beyond `type`/`properties`/`required` (for example `additionalProperties`) are forwarded as-is. If the API omits them on read, the provider keeps the configured JSON when the rest of the schema matches.
 
 
 <a id="nestedatt--mcp_servers"></a>

@@ -1,3 +1,9 @@
+## [1.31.1](https://github.com/MemoryStore/terraform-provider-anthropic/compare/v1.31.0...v1.31.1) (2026-09-07)
+
+### 🐛 Bug Fixes
+
+* **agents:** preserve extra JSON Schema keywords on `custom_tools.input_schema` (for example `additionalProperties`) so apply no longer fails with "Provider produced inconsistent result after apply" when the API omits them on read
+
 ## [1.31.0](https://github.com/MemoryStore/terraform-provider-anthropic/compare/v1.29.1...v1.31.0) (2026-09-07)
 
 ### ✨ Features
