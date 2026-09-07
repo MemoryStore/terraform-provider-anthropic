@@ -1168,6 +1168,10 @@ func customToolInputSchemaParam(raw string) (anthropic.BetaManagedAgentsCustomTo
 	if err := json.Unmarshal([]byte(raw), &compact); err != nil {
 		return anthropic.BetaManagedAgentsCustomToolInputSchemaParam{}, err
 	}
+	var asObject map[string]any
+	if err := json.Unmarshal(compact, &asObject); err != nil {
+		return anthropic.BetaManagedAgentsCustomToolInputSchemaParam{}, fmt.Errorf("input_schema must be a JSON object")
+	}
 	return param.Override[anthropic.BetaManagedAgentsCustomToolInputSchemaParam](compact), nil
 }
 
@@ -1199,7 +1203,7 @@ func preserveConfiguredInputSchema(configured, api jsontypes.Normalized) jsontyp
 		return api
 	}
 	if api.IsNull() || api.IsUnknown() {
-		return configured
+		return api
 	}
 	if jsonObjectCovers(configured.ValueString(), api.ValueString()) {
 		return configured

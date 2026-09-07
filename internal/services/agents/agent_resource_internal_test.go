@@ -147,6 +147,73 @@ func TestBuildToolsParams_preservesAdditionalProperties(t *testing.T) {
 	if !strings.Contains(string(raw), `"additionalProperties":false`) {
 		t.Fatalf("request payload dropped additionalProperties: %s", raw)
 	}
+	union, err := json.Marshal(built[0].OfCustom)
+	if err != nil {
+		t.Fatalf("marshal custom tool: %s", err)
+	}
+	if !strings.Contains(string(union), `"additionalProperties":false`) {
+		t.Fatalf("parent tool payload dropped additionalProperties: %s", union)
+	}
+}
+
+func TestCustomToolInputSchemaParam_rejectsNonObject(t *testing.T) {
+	t.Parallel()
+
+	if _, err := customToolInputSchemaParam(`["not","an","object"]`); err == nil {
+		t.Fatal("expected an error for a JSON array")
+	}
+	if _, err := customToolInputSchemaParam(`true`); err == nil {
+		t.Fatal("expected an error for a JSON boolean")
+	}
+}
+
+func TestPreserveConfiguredInputSchema(t *testing.T) {
+	t.Parallel()
+
+	configured := jsontypes.NewNormalizedValue(configuredInputSchemaWithAdditionalProperties)
+	apiMatch := jsontypes.NewNormalizedValue(`{"type":"object","properties":{"email":{"type":"string"}},"required":["email"]}`)
+	apiDiverge := jsontypes.NewNormalizedValue(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`)
+	apiEmpty := jsontypes.NewNormalizedValue(`{}`)
+	apiNull := jsontypes.NewNormalizedNull()
+
+	tests := []struct {
+		name        string
+		configured  jsontypes.Normalized
+		api         jsontypes.Normalized
+		wantConfig  bool
+		wantNullAPI bool
+	}{
+		{name: "keeps extras when API is a subset", configured: configured, api: apiMatch, wantConfig: true},
+		{name: "uses API when properties diverge", configured: configured, api: apiDiverge},
+		{name: "uses API when payload is empty object", configured: configured, api: apiEmpty},
+		{name: "uses API when payload is null", configured: configured, api: apiNull, wantNullAPI: true},
+		{name: "uses API when nothing was configured", configured: jsontypes.NewNormalizedNull(), api: apiMatch},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := preserveConfiguredInputSchema(tt.configured, tt.api)
+			if tt.wantConfig {
+				equal, diags := tt.configured.StringSemanticEquals(context.Background(), got)
+				if diags.HasError() || !equal {
+					t.Fatalf("got %s, want configured schema", got.ValueString())
+				}
+				return
+			}
+			if tt.wantNullAPI {
+				if !got.IsNull() {
+					t.Fatalf("got %s, want API null", got.ValueString())
+				}
+				return
+			}
+			if tt.api.IsNull() {
+				return
+			}
+			equal, diags := tt.api.StringSemanticEquals(context.Background(), got)
+			if diags.HasError() || !equal {
+				t.Fatalf("got %s, want API schema", got.ValueString())
+			}
+		})
+	}
 }
 
 func TestMapAgentResponseToState_keepsConfiguredAdditionalProperties(t *testing.T) {
