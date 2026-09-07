@@ -1,3 +1,33 @@
+## [1.30.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.30.0...v1.30.1) (2026-09-04)
+
+### 🐛 Bug Fixes
+
+* **vaults:** poll destroy/archive checks past the API staleness window ([#199](https://github.com/ippontech/terraform-provider-anthropic/issues/199)) ([4c8b2a8](https://github.com/ippontech/terraform-provider-anthropic/commit/4c8b2a8ae88563f79fd8349783c86c6afc9cecda)), closes [#193](https://github.com/ippontech/terraform-provider-anthropic/issues/193)
+
+## [1.30.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.29.1...v1.30.0) (2026-09-01)
+
+### ✨ Features
+
+* **provider:** support org:admin OAuth bearer token auth ([#195](https://github.com/ippontech/terraform-provider-anthropic/issues/195)) ([fc05035](https://github.com/ippontech/terraform-provider-anthropic/commit/fc0503505ee95a6a2f3659a3043c93c50dc1cb2e)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#187](https://github.com/ippontech/terraform-provider-anthropic/issues/187) [#192](https://github.com/ippontech/terraform-provider-anthropic/issues/192) [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#186](https://github.com/ippontech/terraform-provider-anthropic/issues/186)
+
+## [1.29.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.29.0...v1.29.1) (2026-09-01)
+
+### 🐛 Bug Fixes
+
+* **vaults:** wait for an update to become visible before returning ([#193](https://github.com/ippontech/terraform-provider-anthropic/issues/193)) ([23fdbb0](https://github.com/ippontech/terraform-provider-anthropic/commit/23fdbb0409e60b9b0ef3c5e6837f3f45df55d2c4)), closes [#188](https://github.com/ippontech/terraform-provider-anthropic/issues/188)
+
+## [1.29.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.28.2...v1.29.0) (2026-09-01)
+
+### ✨ Features
+
+* **admin:** add retry and backoff to the Admin API client ([#188](https://github.com/ippontech/terraform-provider-anthropic/issues/188)) ([c3261a8](https://github.com/ippontech/terraform-provider-anthropic/commit/c3261a8bd09712341669ef912d05b5c836bc78ea)), closes [#186](https://github.com/ippontech/terraform-provider-anthropic/issues/186) [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137)
+
+## [1.28.2](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.28.1...v1.28.2) (2026-09-01)
+
+### 🐛 Bug Fixes
+
+* **renovate:** drop the schedule so the Mend app can act ([#182](https://github.com/ippontech/terraform-provider-anthropic/issues/182)) ([a63d122](https://github.com/ippontech/terraform-provider-anthropic/commit/a63d122424bad01b702442932733c488804a8ef8)), closes [175/#177](https://github.com/175/terraform-provider-anthropic/issues/177) [#176](https://github.com/ippontech/terraform-provider-anthropic/issues/176) [#177](https://github.com/ippontech/terraform-provider-anthropic/issues/177) [#166](https://github.com/ippontech/terraform-provider-anthropic/issues/166) [#169](https://github.com/ippontech/terraform-provider-anthropic/issues/169)
+
 ## [1.28.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.28.0...v1.28.1) (2026-07-20)
 
 ### 🐛 Bug Fixes

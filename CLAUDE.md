@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a Terraform provider built with [HashiCorp Terraform Plugin Framework](https://developer.hashicorp.com/terraform/plugin/framework) v1.19.0.
 
+The Anthropic Go SDK is pinned to **v1.67.0** and must not be bumped past it in a plain `chore(deps)` change. v1.68.0 renames skill fields (`display_title` → `display_name`, `latest_version` → `latest_version_id`) and drops `directory` and `version` from the skill-version response — but **the deployed API still sends the v1.67.0 names**. Verified against the live API on 2026-09-01 under `anthropic-beta: skills-2025-10-02` (the only skills beta constant, unchanged in v1.68.0): `GET /v1/skills` returns `display_title` and `latest_version`, and `GET /v1/skills/{id}/versions` returns `directory` and `version`. v1.67.0's struct tags match that payload field for field.
+
+So v1.68.0 is **ahead of the API, not behind it**: bumping now would silently deserialise `""` into `display_name` and `latest_version_id` (the API sends the old keys, which v1.68.0 no longer maps) and would drop two attributes the API still returns. Going past v1.67.0 needs the API rename to ship first, then a documented migration. `renovate.json` enforces this with an `allowedVersions: "<1.68.0"` rule on the SDK, so no bump PR can be opened (patch releases within `1.67.x` still flow) — the note in `.github/renovate.md` explains why guidance alone was not enough. Re-run the check above before revisiting, and remove the rule only as part of [#192](https://github.com/ippontech/terraform-provider-anthropic/issues/192).
+
 - `main.go` — entry point; serves the provider at `registry.terraform.io/ippontech/anthropic`
 - `internal/provider/provider.go` — provider registration; `Resources()` and `DataSources()` methods list all implemented resources and data sources
 - `internal/services/` — all resources and data sources, organized by Anthropic service (one subdirectory per service)
@@ -122,12 +126,13 @@ After upgrading Go via mise, run `go clean -cache` before `make` to clear stale 
 make build          # Compile the provider
 make install        # Build and install locally
 make fmt            # Format Go code
+make tidy-check     # Fail if go.mod/go.sum are not tidy (go mod tidy -diff)
 make lint           # Run golangci-lint
 make test           # Run unit tests (120s timeout, 10 parallel workers)
 make testacc        # Run Go acceptance tests (requires TF_ACC=1, 120m timeout)
 make terraform-test # Run Terraform native tests (builds provider, uses .dev.tfrc)
 make generate       # Regenerate docs and format examples
-make                # Default: fmt lint test install generate
+make                # Default: fmt tidy-check lint test install generate
 ```
 
 **After implementing any feature or bug fix, always run `make` (alias for `make default`) before committing.** It formats code, runs the linter, reinstalls the provider, and regenerates docs in one step.
@@ -148,12 +153,22 @@ pre-commit run -a
 
 ### API key model
 
-The provider has two optional API keys — at least one must be configured:
+The provider has three optional credentials — at least one must be configured:
 
-| Key | Provider arg | Env var | Client field | Used by |
+| Credential | Provider arg | Env var | Client field | Used by |
 |---|---|---|---|---|
 | Standard | `api_key` | `ANTHROPIC_API_KEY` | `pd.Client` | All standard resources and data sources |
 | Admin | `admin_api_key` | `ANTHROPIC_ADMIN_API_KEY` | `pd.AdminClient` | Organization endpoints (`/v1/organizations/*`, e.g. workspaces) |
+| OAuth bearer (`org:admin`) | `auth_token` | `ANTHROPIC_AUTH_TOKEN` | `pd.OAuthClient` | Endpoints that reject API keys and require `Authorization: Bearer` (Workload Identity Federation, [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137)) |
+
+Each is resolved by `resolveCredential` (`internal/provider/provider.go`): the provider argument wins when set, the env var otherwise, and an Unknown value (an unresolved reference at plan time) counts as unset.
+
+Two details are load-bearing:
+
+- **`pd.OAuthClient` is a `*providerdata.OAuthClient` wrapper, not a bare `*anthropic.Client`.** The SDK carries no notion of which credential a client holds, so two bare clients are mutually assignable and mixing them up compiles silently, surfacing only as a 401 at apply time. The wrapper keeps the compiler in the loop; [#187](https://github.com/ippontech/terraform-provider-anthropic/issues/187) extends the same treatment to the other clients when `internal/admin` is retired. Because the wrapper adds a level of indirection the other guards do not have, `requireOAuthClient` checks `client.Client != nil` as well as `client != nil` — a non-nil wrapper around a nil SDK client would otherwise pass the guard and nil-deref on the first API call.
+- **Every SDK client is built through `newSDKClient`, which passes `option.WithoutEnvironmentDefaults()`.** `anthropic.NewClient` otherwise prepends `DefaultClientOptions()`, whose chain has five sources: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, the profile named by `ANTHROPIC_PROFILE`, env-var federation, and the fallback profile under the SDK config dir. The first two set a header *before* the explicit option is applied, so with both variables exported — the normal case — a client would present both credentials and the endpoints behind each reject the other. The last three are worse than a stray header: `option.WithConfig` applies a profile's non-credential settings **unconditionally**, so a profile left active by `ant auth login` (the command the provider docs tell operators to run) would override the base URL and stamp its `workspace_id` as an `anthropic-workspace-id` header on every request, none of it visible in the Terraform config. The marker option closes all five. Three tests cover it — `TestConfigureClientsCarryExactlyOneCredential`, `TestConfigureStandardClientDropsInheritedBearer`, `TestConfigureIgnoresTheAmbientProfile` (which plants a profile via `ANTHROPIC_CONFIG_DIR`) — and all fail if it is dropped.
+- **`ANTHROPIC_BASE_URL` is re-applied by hand**, because the marker option skips it too. It is read with an explicit `!= ""` check: an exported-but-empty value must not replace the SDK's production default with `""`. The same trap applies in tests, so `clearCredentialEnv` genuinely `os.Unsetenv`s each variable (after a `t.Setenv` whose only purpose is the restore-on-cleanup it registers) rather than setting it to `""`.
+- **The provider does not do the WIF token exchange**, so the SDK's federation variables alone cannot configure it — `Configure` fails with `Missing Credentials`. Documented as a caveat in `templates/index.md.tmpl`; revisit under [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) if native federation is wanted.
 
 ### Configure method pattern
 
@@ -178,12 +193,14 @@ r.client = pd.Client
 // Standard data source  →  providerrors.RequireDataSourceAPIClient
 // Admin resource        →  providerrors.RequireAdminResourceClient(pd.AdminClient, ...)
 // Admin data source     →  providerrors.RequireAdminDataSourceClient(pd.AdminClient, ...)
+// OAuth resource        →  providerrors.RequireOAuthResourceClient(pd.OAuthClient, ...)
+// OAuth data source     →  providerrors.RequireOAuthDataSourceClient(pd.OAuthClient, ...)
 ```
 
 ### Shared helpers
 
-- `internal/admin/` — HTTP client for Admin API; import as `"github.com/ippontech/terraform-provider-anthropic/internal/admin"`
-- `internal/errors/` (import alias `providerrors`) — nil-client guards for `Configure` methods
+- `internal/admin/` — HTTP client for Admin API; import as `"github.com/ippontech/terraform-provider-anthropic/internal/admin"`. `DoRequest` retries with exponential backoff plus jitter, honouring the `x-should-retry` override and the `retry-after-ms` / `retry-after` headers. **What gets retried depends on the method.** Idempotent requests (`GET`, `DELETE`, and the rest of the RFC 9110 set) replay on connection errors, on a response body that stops arriving mid-read, and on the transient statuses the Anthropic SDK retries (408, 409, 429, 5xx). A `POST` replays **only on 429** — the one answer that states the call was not processed; on a 5xx, a 409 or a dropped connection the write may already have landed, and a second `POST /v1/organizations/workspaces` would create a duplicate workspace (names are not unique) while a second member-add would burn the budget on a 409 and leave the membership untracked. An explicit `x-should-retry` header from the server still wins in both directions. Retries are **opt-in**: `admin.NewClient` sets `MaxRetries` to `DefaultMaxRetries` (2), while the zero-value `Client` built by `admintest.NewClient` performs a single attempt, so unit tests stay fast and deterministic. Tests that do exercise retrying should set `MaxRetries` along with `BaseRetryDelay`/`MaxRetryDelay` (both default when zero) to keep delays in the millisecond range, and their stub must **not** send `retry-after` / `retry-after-ms`: a server-supplied delay deliberately bypasses both knobs (shortening it would only earn another 429) and is bounded only by the 60s `maxRetryAfter` ceiling
+- `internal/errors/` (import alias `providerrors`) — nil-client guards for `Configure` methods; `api_key.go` holds the standard and admin guards, `auth_token.go` the OAuth ones
 - `internal/providerdata/` (import alias `providerdata`) — `ProviderData` struct
 - `internal/retry/` (import alias `provretry`) — multipart file upload with automatic 5xx retry; use `provretry.MultipartUpload(ctx, filePaths, bundleRoot, dirName, fn)` for any resource that uploads files to the API (the Anthropic SDK cannot retry streaming multipart bodies on its own). Each file's multipart name is `dirName + "/" + <path relative to bundleRoot>` (forward-slash normalised), so nested subdirectories inside a bundle are preserved on upload. Derive `bundleRoot` and `dirName` with `provretry.DeriveBundleRoot(filePaths)` — it returns the longest shared parent, which is order-independent (necessary because `fileset()` returns lexically sorted paths and a nested file like `Assets/icon.png` may sort before `SKILL.md`). Files outside `bundleRoot`, or a path equal to `bundleRoot`, are rejected explicitly
 
@@ -279,11 +296,29 @@ The Anthropic API's `metadata` field uses PATCH semantics: omitted keys are pres
 
 Use `buildMetadataPatch(ctx, plan, state)` (in `internal/services/vaults/vault_resource.go`): it upserts planned keys and sets keys removed since prior state to `nil`, returning a `map[string]any` sent via `params.SetExtraFields(map[string]any{"metadata": patch})` (the typed `map[string]string` field can't carry per-key nulls). The same drift applies to nullable scalars like `display_name`: send `param.Null[string]()` to clear, not an omitted field.
 
+### Read-after-write consistency on the vaults API
+
+`POST /v1/vaults/{id}` returns the updated object, but a `GET` issued immediately after can still return the **pre-update** object. Measured against the live API on 2026-09-01: stale at t+493ms, converged between 520ms and 1.04s across three trials, with every field back at its prior value (`display_name` included, so it is a stale read rather than a `buildMetadataPatch` artefact). A `GET` straight after a **create** is consistent, so only writes to an existing object are affected.
+
+The window covers **delete** too: on 2026-09-02 `TestAccVaultResource_withMetadata` failed on `main` because `CheckDestroy`'s immediate `Get` still saw the destroyed vault (probed afterwards: authenticated 404, so the delete had landed). Fixed in [#199](https://github.com/ippontech/terraform-provider-anthropic/pull/199) at the **test** layer only — the resource's `Delete` needs no wait since Terraform does not read after a destroy. All four destroy/archive check functions in the vaults acceptance tests poll via the shared helpers in `internal/services/vaults/helpers_test.go`: `awaitGone` (until an API 404 — any other error is surfaced rather than counted as "destroyed") and `awaitArchived` (until non-zero `archived_at`), reusing the 5s/200ms parameters below. Reuse the typed wrappers there (`awaitVaultGone`, `awaitVaultArchived`, `awaitCredentialGone`, `awaitCredentialArchived`, `newAccTestClient`, `hardDeleteVault`) in any new vaults acceptance test instead of a bare post-destroy `Get`.
+
+Left alone, Terraform's post-apply refresh lands inside that window and the next plan shows a phantom in-place update — this is what made `TestAccVaultResource_update` flaky. `vault_resource.go` therefore calls `awaitVaultUpdateVisible` after a successful update: it polls `Get` until `updated_at` is no older than the timestamp the write returned. The wait is **best-effort** — a read error, a timeout or a cancelled context returns without a diagnostic, because the write already succeeded and failing the apply would turn a cosmetic staleness window into a hard error.
+
+Two details of that loop are load-bearing. The ceiling (5s) and interval (200ms) are **consts passed as arguments**, not package-level `var`s: the unit tests need to shrink them to milliseconds, and the vaults acceptance tests exercise the real `Update` in the same test binary, so a mutable global would race the moment any vault test opted into `t.Parallel()` (`make test` runs with `-parallel=10`). And a `401`, `403` or `404` from the poll (`isTerminalVaultReadError`) bails out immediately instead of retrying to the deadline — a vault deleted out-of-band, or a key that lost access to it, will never converge, and retrying would stall the apply for seconds. Every other failure keeps polling, since it says nothing about visibility.
+
+Compare the two timestamps with a **non-strict** comparison — `!vault.UpdatedAt.Before(writtenAt)`, not `vault.UpdatedAt.After(writtenAt)`: an `updated_at` **equal** to the write timestamp must count as visible, or the loop always times out. `anthropic_vault_credential` has the same structural exposure but no observed flakiness, and its endpoint was not probed — check before assuming it needs the same wait.
+
 ### PII attributes and example outputs
 
 Do **not** mark user PII attributes (`email`, `name`, etc.) as `Sensitive: true` in a data source/resource schema. They are the legitimate product of a lookup, not credentials, and schema-level sensitivity forces every consumer into `sensitive = true` outputs or `nonsensitive()` wrappers. This matches the GitLab provider, whose `gitlab_user` resource and `gitlab_user`/`gitlab_users` data sources mark only `password` sensitive, never `email`/`name`. Reserve `Sensitive: true` for true secrets (see write-only attributes above).
 
 Instead, prevent PII from leaking into CI logs at the **example-output** layer: any example `output` that surfaces an email/name must set `sensitive = true` (e.g. `examples/data-sources/organization_member[s]/data_source.tf`). The native tests run those example modules via `terraform test`, and the live-API jobs (`testacc.yml`: `push` to `main` + `workflow_dispatch`, never `pull_request`) run under the public repo, so a non-sensitive output would print real addresses in world-readable Actions logs. Marking the output sensitive renders `(sensitive value)` instead. An output can always upgrade a non-sensitive source attribute to sensitive, so no schema change is needed.
+
+### Agent built-in tool configs are an SDK union
+
+Since SDK v1.66.0 `agent_toolset.configs` maps to `BetaManagedAgentsAgentToolConfigParamsUnion` — one struct per built-in tool, so the Terraform `name` attribute selects a union branch instead of filling an enum field. Two places must stay in sync when the API gains a built-in tool: the `stringvalidator.OneOf(...)` list on the `name` attribute and the `switch` in `buildAgentToolConfigParams` (`internal/services/agents/agent_resource.go`). The helper returns an error diagnostic on an unknown name rather than silently sending an empty config. Note where each net catches: the validator rejects a name outside the `OneOf` list **at plan time**, but a name that passes the validator and has no `switch` branch is only reached from `Create` and `Update`, so it fails **mid-apply** — which is why the branch coverage in `agent_resource_internal_test.go` matters. Permission policies are still just the two `alwaysAllowPolicyParam` / `alwaysAskPolicyParam` shapes, wrapped in each tool's own `PermissionPolicyUnion`.
+
+Response-side types stay flat (`...AgentToolConfigUnion`), so state mapping needs no per-tool switch.
 
 ### Version constraints
 
