@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"net/http"
 	"os"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -100,15 +101,20 @@ func (p *AnthropicProvider) Configure(ctx context.Context, req provider.Configur
 
 	// Each client carries exactly the credential resolved above and nothing
 	// the environment contributed on its own — see newSDKClient.
+	httpClient, err := provretry.NewHTTPClient(ctx)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid Skills request coordination", err.Error())
+		return
+	}
 	pd := &providerdata.ProviderData{}
 	if apiKey != "" {
-		pd.Client = newSDKClient(option.WithAPIKey(apiKey))
+		pd.Client = newSDKClient(option.WithAPIKey(apiKey), httpClient)
 	}
 	if adminApiKey != "" {
 		pd.AdminClient = admin.NewClient(adminApiKey)
 	}
 	if authToken != "" {
-		pd.OAuthClient = &providerdata.OAuthClient{Client: newSDKClient(option.WithAuthToken(authToken))}
+		pd.OAuthClient = &providerdata.OAuthClient{Client: newSDKClient(option.WithAuthToken(authToken), httpClient)}
 	}
 
 	resp.DataSourceData = pd
@@ -147,11 +153,11 @@ func resolveCredential(configValue types.String, envVar string) string {
 // still worth honouring is ANTHROPIC_BASE_URL, which the marker option also
 // skips. It is read with an explicit emptiness check: an exported-but-empty
 // value must not replace the SDK's production default with "".
-func newSDKClient(credential option.RequestOption) *anthropic.Client {
+func newSDKClient(credential option.RequestOption, httpClient *http.Client) *anthropic.Client {
 	opts := []option.RequestOption{
 		option.WithoutEnvironmentDefaults(),
 		credential,
-		option.WithHTTPClient(provretry.NewHTTPClient()),
+		option.WithHTTPClient(httpClient),
 	}
 	if baseURL := os.Getenv("ANTHROPIC_BASE_URL"); baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))

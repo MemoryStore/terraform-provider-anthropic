@@ -37,6 +37,8 @@ func clearCredentialEnv(t *testing.T) {
 		"ANTHROPIC_ADMIN_API_KEY",
 		"ANTHROPIC_AUTH_TOKEN",
 		"ANTHROPIC_BASE_URL",
+		"ANTHROPIC_SKILLS_REQUESTS_PER_MINUTE",
+		"ANTHROPIC_SKILLS_RATE_LIMIT_FILE",
 	} {
 		t.Setenv(k, "")
 		if err := os.Unsetenv(k); err != nil {
@@ -349,5 +351,18 @@ func TestResolveCredential(t *testing.T) {
 				t.Errorf("resolveCredential() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestConfigureRejectsInvalidSkillsCoordination(t *testing.T) {
+	clearCredentialEnv(t)
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	t.Setenv("ANTHROPIC_SKILLS_REQUESTS_PER_MINUTE", "0")
+	resp := configureProvider(t, nil)
+	if !resp.Diagnostics.HasError() || resp.Diagnostics.Errors()[0].Summary() != "Invalid Skills request coordination" {
+		t.Fatalf("expected explicit coordination error, got %v", resp.Diagnostics)
+	}
+	if resp.ResourceData != nil || resp.DataSourceData != nil {
+		t.Fatal("invalid coordination must not configure resource clients")
 	}
 }

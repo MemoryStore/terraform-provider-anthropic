@@ -5,10 +5,10 @@ package retry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -64,58 +64,30 @@ func TestSkillsReadAndDeleteRetry429(t *testing.T) {
 	}
 }
 
-func TestSkillsRequestsAreLimitedAcrossConcurrentCalls(t *testing.T) {
-	const (
-		requests = 6
-		interval = 15 * time.Millisecond
-	)
-	var (
-		mu     sync.Mutex
-		starts []time.Time
-	)
-	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		mu.Lock()
-		starts = append(starts, time.Now())
-		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{}`)
-	})
-
-	client := anthropic.NewClient(
-		option.WithAPIKey("test"),
-		option.WithBaseURL("https://anthropic.test"),
-		option.WithHTTPClient(newHTTPClient(handlerTransport(handler), interval)),
-		option.WithMaxRetries(0),
-	)
+func TestSkillsConcurrentCallsHonorSharedCooldown(t *testing.T) {
+	var calls atomic.Int32
+	client := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return handlerTransport(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})).RoundTrip(req)
+	}), 15*time.Millisecond)
+	if err := client.Transport.(*rateLimitTransport).skillsLimiter.deferFor(context.Background(), time.Hour); err != nil {
+		t.Fatal(err)
+	}
 	var wg sync.WaitGroup
-	errs := make(chan error, requests)
-	for i := range requests {
-		wg.Add(1)
-		go func(version int) {
-			defer wg.Done()
-			_, err := client.Beta.Skills.Versions.Get(context.Background(), fmt.Sprint(version), anthropic.BetaSkillVersionGetParams{SkillID: "skill_123"})
-			errs <- err
-		}(i)
+	for range 6 {
+		wg.Go(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+			defer cancel()
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://anthropic.test/v1/skills/skill_123", nil)
+			_, err := client.Do(req)
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("error = %v, want deadline", err)
+			}
+		})
 	}
 	wg.Wait()
-	close(errs)
-	for err := range errs {
-		if err != nil {
-			t.Fatalf("concurrent Read: %v", err)
-		}
-	}
-
-	mu.Lock()
-	slices.SortFunc(starts, func(a, b time.Time) int { return a.Compare(b) })
-	gotStarts := append([]time.Time(nil), starts...)
-	mu.Unlock()
-	if len(gotStarts) != requests {
-		t.Fatalf("request starts = %d, want %d", len(gotStarts), requests)
-	}
-	for i := 1; i < len(gotStarts); i++ {
-		if gap := gotStarts[i].Sub(gotStarts[i-1]); gap < interval-time.Millisecond {
-			t.Errorf("requests %d and %d started %s apart, want at least %s", i-1, i, gap, interval-time.Millisecond)
-		}
+	if calls.Load() != 0 {
+		t.Fatalf("%d requests bypassed shared cooldown", calls.Load())
 	}
 }
 
