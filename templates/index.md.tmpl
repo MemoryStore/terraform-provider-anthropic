@@ -85,6 +85,21 @@ Profiles under `~/.config/anthropic` are ignored for the same reason: each clien
 ~> **Warning**: Never hardcode API keys in your Terraform configuration files.
 Use environment variables or a secrets manager instead.
 
+## Skills request coordination
+
+Skills requests share a paced budget across clients in one provider process. The default is 90 requests per minute. Initial requests and retries use the same budget; a Skills `429` pauses queued Skills requests until its retry delay expires. Other API operations retain their existing concurrency. Cancellation and request deadlines also cancel budget waits.
+
+Set `ANTHROPIC_SKILLS_REQUESTS_PER_MINUTE` to a positive finite number to change the budget. To share it across Terraform processes on the same host, also set an absolute local file path:
+
+```bash
+export ANTHROPIC_SKILLS_REQUESTS_PER_MINUTE=90
+export ANTHROPIC_SKILLS_RATE_LIMIT_FILE=/srv/previews/.anthropic/skills-rate-limit.json
+```
+
+Create the parent directory before starting Terraform, with access restricted to the runner account. All processes must use the same path and rate. The file contains timing metadata only; a separate `.lock` file coordinates access. Keep both outside temporary checkout directories. This coordinates one host, not multiple machines or network filesystems. Without a path, each process has its own budget.
+
+Invalid settings, inaccessible paths, malformed state, and conflicting rates fail explicitly; the provider never falls back to an independent budget. To change the shared rate or repair state, stop all participating processes before removing the state file. Never replace or remove the `.lock` file while a process is running.
+
 ## Cost considerations
 
 ~> **Warning**: Some resources call billable Anthropic APIs at `terraform apply` time and can generate unbounded variable cost. `anthropic_message` consumes tokens on every apply, and Managed Agents / Skills (created via `anthropic_agent`, `anthropic_environment`, `anthropic_skill`, `anthropic_skill_version`) are free to manage but billable when invoked at runtime. Combining these with `count`/`for_each` over a large input set, or omitting `max_tokens`, can produce a single apply that costs significantly more than expected.
