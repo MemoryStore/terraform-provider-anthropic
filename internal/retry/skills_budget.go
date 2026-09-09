@@ -132,11 +132,11 @@ func (l *serialLimiter) access(ctx context.Context, change func(*budgetState) (t
 	// The lock inode is stable. Only the separate JSON state is atomically replaced.
 	lock, err := os.OpenFile(l.path+".lock", os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
-		return 0, fmt.Errorf("Skills coordination lock: %w", err)
+		return 0, fmt.Errorf("skills coordination lock: %w", err)
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 	if err := acquireFileLock(ctx, lock); err != nil {
-		return 0, fmt.Errorf("Skills coordination lock: %w", err)
+		return 0, fmt.Errorf("skills coordination lock: %w", err)
 	}
 	defer releaseFileLock(lock)
 	if err := ctx.Err(); err != nil {
@@ -154,7 +154,7 @@ func (l *serialLimiter) access(ctx context.Context, change func(*budgetState) (t
 			return 0, fmt.Errorf("invalid Skills coordination state at %s; stop all users before repairing it", l.path)
 		}
 		if state.Interval != int64(l.interval) {
-			return 0, fmt.Errorf("Skills coordination budget differs at %s; all users must configure the same RPM; stop all users before resetting state", l.path)
+			return 0, fmt.Errorf("skills coordination budget differs at %s; all users must configure the same RPM; stop all users before resetting state", l.path)
 		}
 	}
 	delay, dirty := change(&state)
@@ -169,7 +169,7 @@ func (l *serialLimiter) access(ctx context.Context, change func(*budgetState) (t
 	if err != nil {
 		return 0, fmt.Errorf("create Skills coordination state: %w", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 	if _, err = tmp.Write(data); err == nil {
 		err = tmp.Sync()
 	}

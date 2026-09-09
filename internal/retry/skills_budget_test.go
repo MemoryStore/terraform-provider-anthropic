@@ -104,7 +104,7 @@ func TestFileLockWaitCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 	if err := acquireFileLock(context.Background(), lock); err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestSkills429PublishesCooldownForSiblingAndMultipart(t *testing.T) {
 				if err != nil || res.StatusCode != 429 {
 					t.Fatal(res, err)
 				}
-				res.Body.Close()
+				_ = res.Body.Close()
 			} else if !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatal(err)
 			}
@@ -169,7 +169,7 @@ func TestOtherEndpointsAndOrdinary4xxRemainUnaffected(t *testing.T) {
 	if err != nil || res.StatusCode != 400 || calls.Load() != 1 {
 		t.Fatal(res, err, calls.Load())
 	}
-	res.Body.Close()
+	_ = res.Body.Close()
 	l = newSerialLimiter(0)
 	tr.skillsLimiter = l
 	req.URL.Path = "/v1/skills/x"
@@ -177,7 +177,7 @@ func TestOtherEndpointsAndOrdinary4xxRemainUnaffected(t *testing.T) {
 	if err != nil || res.StatusCode != 400 || calls.Load() != 2 {
 		t.Fatal(res, err, calls.Load())
 	}
-	res.Body.Close()
+	_ = res.Body.Close()
 }
 
 func TestSharedBudgetHelperProcess(t *testing.T) {
