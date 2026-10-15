@@ -1,8 +1,50 @@
 # Provider parity fixes: skill drift, metadata patch, credential consistency, org pin
 
-Status: proposed
+Status: implemented; validation results below
 Date: 2026-09-18
 Owner: unassigned
+
+## Implementation outcomes (2026-10-15)
+
+Implemented against current `main` (base `43eb94f`), including its federation support.
+The SDK remains pinned to v1.67.0. The original proposal below is retained for context;
+these measured outcomes and implementation details supersede its open assumptions.
+
+- **Probe A, live `terraform-tests`:** agents and environments both preserved `{a="1", b="2"}`
+  after an update containing only `{a="1"}`, and after `{}`. Explicit per-key nulls
+  produced an empty bag. Reads were taken 1.3 seconds after each write. Both now use
+  the shared metadata patch helper, along with vaults and vault credentials.
+- **SDK check:** both agent and environment update parameter structs embed the SDK
+  parameter metadata and expose `SetExtraFields`; no override fallback is needed.
+- **Probe B, live `terraform-tests`:** three credential display-name update trials,
+  polling every 100ms for 3 seconds, observed zero stale reads (6 reads per trial).
+  First reads reflected the new field and timestamp at 425ms, 409ms and 388ms.
+  The immediate read after deleting the credential returned 404. This does not rule
+  out a shorter or intermittent window; no credential consistency wait was added.
+  Temporary probe resources were cleaned up.
+- **Skill tracking:** computed relative-path SHA-256 maps drive in-place skill version
+  publication and explicit immutable-version replacement. Existing/imported state adopts
+  missing hashes without a write solely for adoption; actual established file-list
+  changes still take effect. State-only updates persist `force_destroy`. Apply checks
+  known planned hashes before uploads. Reads retain the recorded baseline.
+- **Organization identity, read-only live check:** the configured standard API key
+  successfully retrieved an organization ID from `/v1/organizations/me` (HTTP 200).
+  The pin checks every configured client, including standard keys and federated OAuth,
+  and fails closed if any lookup fails or mismatches. OAuth/admin behavior is covered
+  by local HTTP-server tests; no live OAuth/Admin mutation was performed.
+- **Pinned skill versions:** deletion behavior for an agent-pinned version is not
+  live-verified. Resource documentation warns about deletion failure or affected consumers
+  and describes replacement ordering; no active agent/session is used for validation.
+
+Validation: `make` passed (formatting, module tidiness, golangci-lint with zero
+issues, the full Go unit suite, build/install and documentation generation).
+Seven targeted live acceptance cases passed across the final runs: skill basics,
+content updates including file additions/removals and relocation, import adoption
+for skills and versions, immutable-version basics/replacement, and metadata
+removal on agents and environments. The live import test confirms adoption does
+not publish a version. All pre-commit hooks passed, including Terraform lint, actionlint, poutine, semgrep
+and Checkov. The tflint binary was installed under `/tmp` using the version and
+checksum pinned in CI; mise trust was scoped to the worktree process.
 
 ## Why now
 
