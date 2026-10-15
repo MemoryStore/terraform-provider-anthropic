@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	providerrors "github.com/ippontech/terraform-provider-anthropic/internal/errors"
+	"github.com/ippontech/terraform-provider-anthropic/internal/metadata"
 	providerdata "github.com/ippontech/terraform-provider-anthropic/internal/providerdata"
 )
 
@@ -296,6 +297,17 @@ func (r *EnvironmentResource) ModifyPlan(ctx context.Context, req resource.Modif
 		return
 	}
 
+	// Optional+Computed metadata otherwise inherits prior state when the user
+	// removes the block. Config distinguishes that removal from preservation.
+	var configuredMetadata types.Map
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("metadata"), &configuredMetadata)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if configuredMetadata.IsNull() {
+		plan.Metadata = types.MapNull(types.StringType)
+	}
+
 	if !plan.Name.Equal(state.Name) ||
 		!plan.Description.Equal(state.Description) ||
 		!plan.Metadata.Equal(state.Metadata) ||
@@ -409,13 +421,13 @@ func (r *EnvironmentResource) Update(ctx context.Context, req resource.UpdateReq
 		params.Description = param.NewOpt(data.Description.ValueString())
 	}
 
-	if !data.Metadata.IsNull() && !data.Metadata.IsUnknown() {
-		var meta map[string]string
-		resp.Diagnostics.Append(data.Metadata.ElementsAs(ctx, &meta, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		params.Metadata = meta
+	metaPatch, diags := metadata.BuildPatch(ctx, data.Metadata, state.Metadata)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if len(metaPatch) > 0 {
+		params.SetExtraFields(map[string]any{"metadata": metaPatch})
 	}
 
 	if !data.Config.IsNull() && !data.Config.IsUnknown() {
@@ -613,7 +625,11 @@ func mapEnvironmentResponseToState(ctx context.Context, env *anthropic.BetaEnvir
 		diags.Append(d...)
 		data.Metadata = metaMap
 	} else if !data.Metadata.IsNull() {
-		data.Metadata = types.MapNull(types.StringType)
+		if !data.Metadata.IsUnknown() && len(data.Metadata.Elements()) == 0 {
+			data.Metadata = types.MapValueMust(types.StringType, map[string]attr.Value{})
+		} else {
+			data.Metadata = types.MapNull(types.StringType)
+		}
 	}
 
 	// Config — always set since API always returns it

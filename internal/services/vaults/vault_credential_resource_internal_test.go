@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/ippontech/terraform-provider-anthropic/internal/metadata"
 	"github.com/ippontech/terraform-provider-anthropic/internal/schematest"
 )
 
@@ -527,7 +528,7 @@ func TestBuildMetadataPatch(t *testing.T) {
 	t.Run("upsert and delete removed key", func(t *testing.T) {
 		plan := mapValue(t, map[string]string{"a": "1", "c": "3"})
 		state := mapValue(t, map[string]string{"a": "1", "b": "2"})
-		patch, diags := buildMetadataPatch(ctx, plan, state)
+		patch, diags := metadata.BuildPatch(ctx, plan, state)
 		if diags.HasError() {
 			t.Fatalf("buildMetadataPatch: %v", diags)
 		}
@@ -542,7 +543,7 @@ func TestBuildMetadataPatch(t *testing.T) {
 
 	t.Run("clear all when plan null", func(t *testing.T) {
 		state := mapValue(t, map[string]string{"a": "1", "b": "2"})
-		patch, diags := buildMetadataPatch(ctx, nullMap, state)
+		patch, diags := metadata.BuildPatch(ctx, nullMap, state)
 		if diags.HasError() {
 			t.Fatalf("buildMetadataPatch: %v", diags)
 		}
@@ -552,7 +553,7 @@ func TestBuildMetadataPatch(t *testing.T) {
 	})
 
 	t.Run("no change when both null", func(t *testing.T) {
-		patch, diags := buildMetadataPatch(ctx, nullMap, nullMap)
+		patch, diags := metadata.BuildPatch(ctx, nullMap, nullMap)
 		if diags.HasError() {
 			t.Fatalf("buildMetadataPatch: %v", diags)
 		}

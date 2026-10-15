@@ -329,7 +329,12 @@ In a `ConfigValidator`, treat Unknown values (unresolved `var`/output refs at pl
 
 The Anthropic API's `metadata` field uses PATCH semantics: omitted keys are preserved, a key set to `null` is deleted. A plain `if !plan.Metadata.IsNull() { params.Metadata = ... }` therefore **cannot clear** keys removed in config — the API keeps them and the response overwrites the planned value → "Provider produced inconsistent result after apply".
 
-Use `buildMetadataPatch(ctx, plan, state)` (in `internal/services/vaults/vault_resource.go`): it upserts planned keys and sets keys removed since prior state to `nil`, returning a `map[string]any` sent via `params.SetExtraFields(map[string]any{"metadata": patch})` (the typed `map[string]string` field can't carry per-key nulls). The same drift applies to nullable scalars like `display_name`: send `param.Null[string]()` to clear, not an omitted field.
+Use `metadata.BuildPatch(ctx, plan, state)` (in `internal/metadata/patch.go`): it upserts planned keys and sets keys removed since prior state to `nil`, returning a `map[string]any` sent via `params.SetExtraFields(map[string]any{"metadata": patch})` (the typed `map[string]string` field can't carry per-key nulls). The same drift applies to nullable scalars like `display_name`: send `param.Null[string]()` to clear, not an omitted field.
+
+Metadata handling is shared in `internal/metadata.BuildPatch`. Agents and environments
+were probed in `terraform-tests` on 2026-10-15: both preserve omitted keys and `{}`, and
+remove keys explicitly set to null. Keep explicitly configured empty maps empty in state;
+an omitted block remains null. Unknown metadata defers patch construction.
 
 ### Read-after-write consistency on the vaults API
 

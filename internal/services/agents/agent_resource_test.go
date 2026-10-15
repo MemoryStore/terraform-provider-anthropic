@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	acctest "github.com/ippontech/terraform-provider-anthropic/internal/acctest"
@@ -468,6 +469,25 @@ resource "anthropic_agent" "coordinator" {
 					resource.TestCheckResourceAttr(coord, "multiagent.agents.0.version", "1"),
 				),
 			},
+		},
+	})
+}
+
+// Exercise null key deletion and preserve the distinction between {} and an
+// omitted metadata block through real Terraform plan/apply/refresh cycles.
+func TestAccAgentResource_metadataRemoval(t *testing.T) {
+	base := testAccAgentResourceBasicConfig
+	withMetadata := func(metadata string) string {
+		return strings.TrimSuffix(strings.TrimSpace(base), "}") + "\n metadata = " + metadata + "\n}\n"
+	}
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() { acctest.PreCheck(t) }, ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories, CheckDestroy: testAccCheckAgentDestroyed,
+		Steps: []resource.TestStep{
+			{Config: withMetadata(`{a="1",b="2"}`), Check: resource.TestCheckResourceAttr("anthropic_agent.test", "metadata.%", "2")},
+			{Config: withMetadata(`{a="1"}`), Check: resource.TestCheckResourceAttr("anthropic_agent.test", "metadata.%", "1")},
+			{Config: withMetadata(`{}`), Check: resource.TestCheckResourceAttr("anthropic_agent.test", "metadata.%", "0")},
+			{Config: withMetadata(`{a="1",b="2"}`)},
+			{Config: base, Check: resource.TestCheckNoResourceAttr("anthropic_agent.test", "metadata.%")},
 		},
 	})
 }

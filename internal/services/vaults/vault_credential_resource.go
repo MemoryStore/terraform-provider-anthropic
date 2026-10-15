@@ -28,6 +28,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	providerrors "github.com/ippontech/terraform-provider-anthropic/internal/errors"
+	"github.com/ippontech/terraform-provider-anthropic/internal/metadata"
 	providerdata "github.com/ippontech/terraform-provider-anthropic/internal/providerdata"
 )
 
@@ -602,7 +603,7 @@ func (r *VaultCredentialResource) Update(ctx context.Context, req resource.Updat
 	// metadata uses PATCH semantics (omitted keys preserved, null deletes a key).
 	// Build a patch that upserts planned keys and explicitly nulls keys removed
 	// since the prior state, so a cleared/removed key actually converges.
-	metaPatch, d := buildMetadataPatch(ctx, plan.Metadata, state.Metadata)
+	metaPatch, d := metadata.BuildPatch(ctx, plan.Metadata, state.Metadata)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return

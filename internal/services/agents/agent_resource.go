@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	providerrors "github.com/ippontech/terraform-provider-anthropic/internal/errors"
+	"github.com/ippontech/terraform-provider-anthropic/internal/metadata"
 	providerdata "github.com/ippontech/terraform-provider-anthropic/internal/providerdata"
 )
 
@@ -609,16 +610,13 @@ func (r *AgentResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		params.System = param.NewOpt("")
 	}
 
-	// Metadata
-	if !data.Metadata.IsNull() {
-		var meta map[string]string
-		resp.Diagnostics.Append(data.Metadata.ElementsAs(ctx, &meta, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		params.Metadata = meta
-	} else {
-		params.Metadata = map[string]string{}
+	metaPatch, diags := metadata.BuildPatch(ctx, data.Metadata, state.Metadata)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if len(metaPatch) > 0 {
+		params.SetExtraFields(map[string]any{"metadata": metaPatch})
 	}
 
 	// MCP servers
@@ -1081,7 +1079,11 @@ func mapAgentResponseToState(ctx context.Context, agent *anthropic.BetaManagedAg
 		diags.Append(d...)
 		data.Metadata = metaMap
 	} else if !data.Metadata.IsNull() {
-		data.Metadata = types.MapNull(types.StringType)
+		if !data.Metadata.IsUnknown() && len(data.Metadata.Elements()) == 0 {
+			data.Metadata = types.MapValueMust(types.StringType, map[string]attr.Value{})
+		} else {
+			data.Metadata = types.MapNull(types.StringType)
+		}
 	}
 
 	// MCP servers
