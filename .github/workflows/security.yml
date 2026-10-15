@@ -14,14 +14,14 @@ jobs:
       contents: read
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           allowed-endpoints: >
             github.com:443
             release-assets.githubusercontent.com:443
 
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -35,14 +35,14 @@ jobs:
       contents: read
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           allowed-endpoints: >
             github.com:443
             release-assets.githubusercontent.com:443
 
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -61,7 +61,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -69,7 +69,7 @@ jobs:
             github.com:443
             release-assets.githubusercontent.com:443
 
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -78,6 +78,57 @@ jobs:
         with:
           config: tools/semgrep.yml
 
+  tflint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            release-assets.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installed from the GitHub release with checksum verification rather than
+      # through a third-party action (poutine flags setup-tflint's unverified
+      # creator, and a pinned binary is the smaller supply-chain surface).
+      #
+      # The expected hash is pinned here, not read from the release's own
+      # checksums.txt: both files come from the same source, so a compromised
+      # release would poison the checksum along with the binary. Bump
+      # TFLINT_VERSION and TFLINT_SHA256 together (value from the target
+      # release's checksums.txt, tflint_linux_amd64.zip line). Renovate only
+      # bumps the version, so its PR goes red here until the hash is updated
+      # by hand; renovate.json therefore excludes tflint from automerge.
+      - name: Install tflint
+        env:
+          # renovate: datasource=github-releases depName=terraform-linters/tflint
+          TFLINT_VERSION: v0.64.0
+          TFLINT_SHA256: cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537
+        run: |
+          set -euo pipefail
+          base="https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}"
+          curl -fsSLO "${base}/tflint_linux_amd64.zip"
+          echo "${TFLINT_SHA256}  tflint_linux_amd64.zip" | sha256sum -c -
+          install_dir="${RUNNER_TEMP}/tflint"
+          mkdir -p "${install_dir}"
+          unzip -o -q tflint_linux_amd64.zip -d "${install_dir}"
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/tflint" --version
+
+      # .tflint.hcl enables the full terraform ruleset (preset "all"); the
+      # bundled ruleset needs no `tflint --init`. Lints every module in the
+      # repo (examples, tests), not just the files a commit touched (#229).
+      - name: Run tflint
+        run: tflint --recursive --format compact
+
   checkov:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -85,7 +136,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -94,12 +145,12 @@ jobs:
             release-assets.githubusercontent.com:443
             www.bridgecrew.cloud:443
 
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Run checkov
-        uses: bridgecrewio/checkov-action@f967808197a8d784d3e72919f38c3ff0cda7884e # v12.3122.0
+        uses: bridgecrewio/checkov-action@29be5868bfa968f099ae80169f61f42887494b8f # v12.3133.0
         with:
           directory: .github/workflows
           framework: github_actions

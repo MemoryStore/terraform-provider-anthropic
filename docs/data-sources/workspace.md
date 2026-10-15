@@ -17,16 +17,6 @@ Fetches a single Anthropic Workspace by ID via the Admin API.
 ## Example Usage
 
 ```hcl
-terraform {
-  required_version = "~> 1.0"
-  required_providers {
-    anthropic = {
-      source  = "registry.terraform.io/MemoryStore/anthropic"
-      version = "~> 1.0"
-    }
-  }
-}
-
 # Create a workspace to read with the data source
 resource "anthropic_workspace" "created" {
   name = "workspace-data-source-example"
@@ -38,15 +28,28 @@ data "anthropic_workspace" "example" {
 }
 
 output "workspace_name" {
-  value = data.anthropic_workspace.example.name
+  description = "Name of the workspace."
+  value       = data.anthropic_workspace.example.name
 }
 
 output "created_at" {
-  value = data.anthropic_workspace.example.created_at
+  description = "Creation timestamp of the workspace (RFC 3339)."
+  value       = data.anthropic_workspace.example.created_at
 }
 
 output "display_color" {
-  value = data.anthropic_workspace.example.display_color
+  description = "Display color of the workspace in the Console."
+  value       = data.anthropic_workspace.example.display_color
+}
+
+output "tags" {
+  description = "User-defined tags of the workspace."
+  value       = data.anthropic_workspace.example.tags
+}
+
+output "compartment_id" {
+  description = "Encryption compartment ID of the workspace."
+  value       = data.anthropic_workspace.example.compartment_id
 }
 ```
 
@@ -60,11 +63,16 @@ output "display_color" {
 ### Read-Only
 
 - `archived_at` (String) RFC 3339 timestamp of when the workspace was archived, or null if it is active.
+- `compartment_id` (String) Identifier of the workspace's encryption compartment.
 - `created_at` (String) RFC 3339 timestamp of when the workspace was created.
 - `data_residency` (Attributes) Data-residency configuration for the workspace. (see [below for nested schema](#nestedatt--data_residency))
 - `display_color` (String) Hex color code representing the workspace in the Anthropic Console.
+- `external_key_id` (String) ID (`ekey_...`) of the customer-managed encryption key (CMEK) configuration attached to the workspace, or null.
+- `inference_data_retention` (Attributes) Inference data retention setting reported by the API, or null if absent. (see [below for nested schema](#nestedatt--inference_data_retention))
 - `name` (String) Human-readable name for the workspace.
+- `tags` (Map of String) User-defined tags as string key-value pairs.
 - `type` (String) Object type. Always `workspace`.
+- `user_profile_id` (String) ID of the user profile associated with the workspace, or null if none.
 
 <a id="nestedatt--data_residency"></a>
 ### Nested Schema for `data_residency`
@@ -74,3 +82,11 @@ Read-Only:
 - `allowed_inference_geos` (List of String) Permitted inference geo values.
 - `default_inference_geo` (String) Default inference geo applied when requests omit the parameter.
 - `workspace_geo` (String) Geographic region for workspace data storage.
+
+
+<a id="nestedatt--inference_data_retention"></a>
+### Nested Schema for `inference_data_retention`
+
+Read-Only:
+
+- `type` (String) Retention mode, for example `disabled`.

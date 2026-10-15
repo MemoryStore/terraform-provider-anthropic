@@ -1,16 +1,259 @@
-## [1.31.1](https://github.com/MemoryStore/terraform-provider-anthropic/compare/v1.31.0...v1.31.1) (2026-09-07)
-
-### 🐛 Bug Fixes
-
-* **agents:** preserve extra JSON Schema keywords on `custom_tools.input_schema` (for example `additionalProperties`) so apply no longer fails with "Provider produced inconsistent result after apply" when the API omits them on read
-
-## [1.31.0](https://github.com/MemoryStore/terraform-provider-anthropic/compare/v1.29.1...v1.31.0) (2026-09-07)
+## [1.61.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.60.0...v1.61.0) (2026-10-13)
 
 ### ✨ Features
 
-* Sync ippontech/terraform-provider-anthropic v1.30.1 (org:admin OAuth `auth_token`, Admin API retry/backoff, vaults read-after-write and destroy polling, anthropic-sdk-go v1.67.0)
-* Serve and document the provider as `registry.terraform.io/MemoryStore/anthropic`
-* Keep fork-only `anthropic_agent` `model_effort` / `multiagent` support and Skills API 429 rate-limit handling on the shared SDK HTTP client
+* **provider:** obtain the org:admin token through workload identity federation ([#322](https://github.com/ippontech/terraform-provider-anthropic/issues/322)) ([a2455df](https://github.com/ippontech/terraform-provider-anthropic/commit/a2455df835fa17282f9e8db7943cb486e24b6fbb)), closes [#304](https://github.com/ippontech/terraform-provider-anthropic/issues/304)
+
+## [1.60.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.59.0...v1.60.0) (2026-10-08)
+
+### ✨ Features
+
+* **message:** add stop_sequences, metadata, service_tier, inference_geo, thinking, output_config and cache_control ([#316](https://github.com/ippontech/terraform-provider-anthropic/issues/316)) ([52a55be](https://github.com/ippontech/terraform-provider-anthropic/commit/52a55be82dd1c6211f30d383ba91e8d1afe96f4a)), closes [#312](https://github.com/ippontech/terraform-provider-anthropic/issues/312) [#192](https://github.com/ippontech/terraform-provider-anthropic/issues/192) [#92](https://github.com/ippontech/terraform-provider-anthropic/issues/92)
+
+## [1.59.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.58.0...v1.59.0) (2026-10-08)
+
+### ✨ Features
+
+* **workspace:** expose tags, external_key_id, compartment_id, inference_data_retention and user_profile_id ([#315](https://github.com/ippontech/terraform-provider-anthropic/issues/315)) ([4a3b07b](https://github.com/ippontech/terraform-provider-anthropic/commit/4a3b07b1e211197c24c295c00adb0e3a03e2fd07)), closes [#139](https://github.com/ippontech/terraform-provider-anthropic/issues/139)
+
+## [1.58.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.57.0...v1.58.0) (2026-10-08)
+
+### ✨ Features
+
+* **files:** add anthropic_file and anthropic_files data sources ([#314](https://github.com/ippontech/terraform-provider-anthropic/issues/314)) ([001cc28](https://github.com/ippontech/terraform-provider-anthropic/commit/001cc28e1f42b68b9338ec7eb59b3417af59ebfb)), closes [#87](https://github.com/ippontech/terraform-provider-anthropic/issues/87)
+
+## [1.57.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.56.1...v1.57.0) (2026-10-08)
+
+### ✨ Features
+
+* **count_tokens:** add thinking, output_config and cache_control parameters ([#313](https://github.com/ippontech/terraform-provider-anthropic/issues/313)) ([730f650](https://github.com/ippontech/terraform-provider-anthropic/commit/730f65063d7399a34ed6c9bc688b2dabc9f073a6)), closes [#93](https://github.com/ippontech/terraform-provider-anthropic/issues/93)
+
+## [1.56.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.56.0...v1.56.1) (2026-10-08)
+
+### 📚 Documentation
+
+* restore the separator in the CLAUDE.md anthropic_agent entry ([#311](https://github.com/ippontech/terraform-provider-anthropic/issues/311)) ([3a893c6](https://github.com/ippontech/terraform-provider-anthropic/commit/3a893c6b125c26ad44e6b09546ff36da972be1ef)), closes [#310](https://github.com/ippontech/terraform-provider-anthropic/issues/310) [#309](https://github.com/ippontech/terraform-provider-anthropic/issues/309)
+
+## [1.56.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.55.0...v1.56.0) (2026-10-08)
+
+### ✨ Features
+
+* **agent:** add multiagent coordinator roster ([#310](https://github.com/ippontech/terraform-provider-anthropic/issues/310)) ([2e82f47](https://github.com/ippontech/terraform-provider-anthropic/commit/2e82f47cd2528f213e60967058a2416cba13cb00)), closes [#306](https://github.com/ippontech/terraform-provider-anthropic/issues/306) [#167](https://github.com/ippontech/terraform-provider-anthropic/issues/167) [#309](https://github.com/ippontech/terraform-provider-anthropic/issues/309) [#167](https://github.com/ippontech/terraform-provider-anthropic/issues/167) [#309](https://github.com/ippontech/terraform-provider-anthropic/issues/309)
+
+## [1.55.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.54.1...v1.55.0) (2026-10-08)
+
+### ✨ Features
+
+* **agent:** add model_effort and model_inference_geo ([#309](https://github.com/ippontech/terraform-provider-anthropic/issues/309)) ([07e76c8](https://github.com/ippontech/terraform-provider-anthropic/commit/07e76c8d720def03f4837e8ab73d5cfd9b0ea1c9)), closes [#274](https://github.com/ippontech/terraform-provider-anthropic/issues/274) [#306](https://github.com/ippontech/terraform-provider-anthropic/issues/306)
+
+## [1.54.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.54.0...v1.54.1) (2026-10-01)
+
+### 🐛 Bug Fixes
+
+* post-merge follow-ups on user profiles and memories ([#293](https://github.com/ippontech/terraform-provider-anthropic/issues/293)) ([d4cc203](https://github.com/ippontech/terraform-provider-anthropic/commit/d4cc2039f9a14c5804044a42554d92fe5a7149dd)), closes [#288](https://github.com/ippontech/terraform-provider-anthropic/issues/288) [#289](https://github.com/ippontech/terraform-provider-anthropic/issues/289) [#290](https://github.com/ippontech/terraform-provider-anthropic/issues/290)
+
+## [1.54.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.53.0...v1.54.0) (2026-09-30)
+
+### ✨ Features
+
+* add anthropic_memory and anthropic_memories data sources ([#291](https://github.com/ippontech/terraform-provider-anthropic/issues/291)) ([c6ae816](https://github.com/ippontech/terraform-provider-anthropic/commit/c6ae8164a7d8d69b60b717873733a4690967b918)), closes [#121](https://github.com/ippontech/terraform-provider-anthropic/issues/121) [#122](https://github.com/ippontech/terraform-provider-anthropic/issues/122)
+
+## [1.53.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.52.0...v1.53.0) (2026-09-29)
+
+### ✨ Features
+
+* add anthropic_user_profile and anthropic_user_profiles data sources ([#289](https://github.com/ippontech/terraform-provider-anthropic/issues/289)) ([042bbfd](https://github.com/ippontech/terraform-provider-anthropic/commit/042bbfd4205d3531ee5e57f7ff54757b2a087137)), closes [#118](https://github.com/ippontech/terraform-provider-anthropic/issues/118)
+
+## [1.52.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.51.0...v1.52.0) (2026-09-29)
+
+### ✨ Features
+
+* add anthropic_memory resource ([#290](https://github.com/ippontech/terraform-provider-anthropic/issues/290)) ([eab5dad](https://github.com/ippontech/terraform-provider-anthropic/commit/eab5dad2d157acbfa8bb196258b4723cef3e9f89)), closes [#121](https://github.com/ippontech/terraform-provider-anthropic/issues/121)
+
+## [1.51.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.50.0...v1.51.0) (2026-09-29)
+
+### ✨ Features
+
+* add anthropic_user_profile resource ([#288](https://github.com/ippontech/terraform-provider-anthropic/issues/288)) ([874c658](https://github.com/ippontech/terraform-provider-anthropic/commit/874c65863785fa4f9112d47c2ab4b191b396d9e7)), closes [#117](https://github.com/ippontech/terraform-provider-anthropic/issues/117)
+
+## [1.50.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.49.0...v1.50.0) (2026-09-29)
+
+### ✨ Features
+
+* add anthropic_file resource ([#272](https://github.com/ippontech/terraform-provider-anthropic/issues/272)) ([fa62ab5](https://github.com/ippontech/terraform-provider-anthropic/commit/fa62ab5c1f6d67e088cdb9bf3f24a8d15f2e9a7e)), closes [#86](https://github.com/ippontech/terraform-provider-anthropic/issues/86)
+
+## [1.49.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.48.0...v1.49.0) (2026-09-29)
+
+### ✨ Features
+
+* add anthropic_invite and anthropic_invites data sources ([#271](https://github.com/ippontech/terraform-provider-anthropic/issues/271)) ([11a087b](https://github.com/ippontech/terraform-provider-anthropic/commit/11a087b40784afadcab883f3e15b9bfb77115493)), closes [#83](https://github.com/ippontech/terraform-provider-anthropic/issues/83)
+
+## [1.48.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.47.0...v1.48.0) (2026-09-29)
+
+### ✨ Features
+
+* add anthropic_invite resource ([#270](https://github.com/ippontech/terraform-provider-anthropic/issues/270)) ([7bee6f1](https://github.com/ippontech/terraform-provider-anthropic/commit/7bee6f1fff6d3a42285ccb1ef77ab10b2120f49e)), closes [#58](https://github.com/ippontech/terraform-provider-anthropic/issues/58) [#82](https://github.com/ippontech/terraform-provider-anthropic/issues/82)
+
+## [1.47.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.46.1...v1.47.0) (2026-09-29)
+
+### ✨ Features
+
+* add anthropic_organization_member resource ([#269](https://github.com/ippontech/terraform-provider-anthropic/issues/269)) ([d69d82c](https://github.com/ippontech/terraform-provider-anthropic/commit/d69d82c691831414fde98d64ec5a397039b75288)), closes [#80](https://github.com/ippontech/terraform-provider-anthropic/issues/80) [#58](https://github.com/ippontech/terraform-provider-anthropic/issues/58)
+
+## [1.46.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.46.0...v1.46.1) (2026-09-29)
+
+### 🐛 Bug Fixes
+
+* **ci:** pin conventionalcommits preset to 8.0.0 to fix the semrel job ([#287](https://github.com/ippontech/terraform-provider-anthropic/issues/287)) ([ec06512](https://github.com/ippontech/terraform-provider-anthropic/commit/ec06512698a6a1b0112430c5aaa7f4a3aac68348)), closes [#185](https://github.com/ippontech/terraform-provider-anthropic/issues/185)
+
+### 📚 Documentation
+
+* align the major-version procedure with the rulesets and CI triggers ([#286](https://github.com/ippontech/terraform-provider-anthropic/issues/286)) ([18eedb0](https://github.com/ippontech/terraform-provider-anthropic/commit/18eedb0cb39788f4a72d4fadb2722d78abaaefa3)), closes [#268](https://github.com/ippontech/terraform-provider-anthropic/issues/268)
+* document the major-version release strategy and pin semantic-release to main ([#268](https://github.com/ippontech/terraform-provider-anthropic/issues/268)) ([017e703](https://github.com/ippontech/terraform-provider-anthropic/commit/017e703b2f1d0cad02749da5a3a60c0e865906cf)), closes [#187](https://github.com/ippontech/terraform-provider-anthropic/issues/187) [#91](https://github.com/ippontech/terraform-provider-anthropic/issues/91)
+
+## [1.46.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.45.0...v1.46.0) (2026-09-29)
+
+### ✨ Features
+
+* add anthropic_memory_store resource and data sources ([#267](https://github.com/ippontech/terraform-provider-anthropic/issues/267)) ([857218d](https://github.com/ippontech/terraform-provider-anthropic/commit/857218da91a4b18719de87a7ad522007567a1841)), closes [#119](https://github.com/ippontech/terraform-provider-anthropic/issues/119) [#120](https://github.com/ippontech/terraform-provider-anthropic/issues/120)
+
+## [1.45.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.44.0...v1.45.0) (2026-09-29)
+
+### ✨ Features
+
+* add anthropic_deployment resource (scheduled deployments) ([#266](https://github.com/ippontech/terraform-provider-anthropic/issues/266)) ([fe4229e](https://github.com/ippontech/terraform-provider-anthropic/commit/fe4229e51ed724113fcb8e50acceae0b0f79a0f4)), closes [#140](https://github.com/ippontech/terraform-provider-anthropic/issues/140)
+
+## [1.44.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.43.6...v1.44.0) (2026-09-29)
+
+### ✨ Features
+
+* add anthropic_deployment_runs data source ([#261](https://github.com/ippontech/terraform-provider-anthropic/issues/261)) ([1aaa838](https://github.com/ippontech/terraform-provider-anthropic/commit/1aaa8380522ad4e36e71552f21f879263883d81c)), closes [#140](https://github.com/ippontech/terraform-provider-anthropic/issues/140) [#141](https://github.com/ippontech/terraform-provider-anthropic/issues/141) [#141](https://github.com/ippontech/terraform-provider-anthropic/issues/141)
+
+## [1.43.6](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.43.5...v1.43.6) (2026-09-29)
+
+### 📚 Documentation
+
+* move WIF guide to its own Guides subcategory ([#265](https://github.com/ippontech/terraform-provider-anthropic/issues/265)) ([0657650](https://github.com/ippontech/terraform-provider-anthropic/commit/0657650219e1366a4c4899cb22b5e305294ca4e7))
+
+## [1.43.5](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.43.4...v1.43.5) (2026-09-17)
+
+### 🐛 Bug Fixes
+
+* **federation:** read issuer_name back after creating a federation rule ([#253](https://github.com/ippontech/terraform-provider-anthropic/issues/253)) ([7644ea2](https://github.com/ippontech/terraform-provider-anthropic/commit/7644ea290f2868ec327e93479dfc5ed3f5f7fbe0)), closes [#243](https://github.com/ippontech/terraform-provider-anthropic/issues/243) [#238](https://github.com/ippontech/terraform-provider-anthropic/issues/238) [#58](https://github.com/ippontech/terraform-provider-anthropic/issues/58) [#243](https://github.com/ippontech/terraform-provider-anthropic/issues/243)
+
+## [1.43.4](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.43.3...v1.43.4) (2026-09-17)
+
+### 🐛 Bug Fixes
+
+* **deps:** update module github.com/hashicorp/terraform-plugin-log to v0.11.0 ([#190](https://github.com/ippontech/terraform-provider-anthropic/issues/190)) ([05329bf](https://github.com/ippontech/terraform-provider-anthropic/commit/05329bfa3d079b0da6a04f30d468827a6a29e48b))
+
+## [1.43.3](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.43.2...v1.43.3) (2026-09-17)
+
+### 🐛 Bug Fixes
+
+* **wif:** unify data-source state mapping with the resources and deduplicate the test helpers ([#245](https://github.com/ippontech/terraform-provider-anthropic/issues/245)) ([29533b8](https://github.com/ippontech/terraform-provider-anthropic/commit/29533b80199d4be47f71ead699d2b96907b22b06)), closes [#239](https://github.com/ippontech/terraform-provider-anthropic/issues/239) [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#244](https://github.com/ippontech/terraform-provider-anthropic/issues/244)
+
+## [1.43.2](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.43.1...v1.43.2) (2026-09-17)
+
+### 🐛 Bug Fixes
+
+* **wif:** probe read-after-write staleness and add bounded waits where measured ([#244](https://github.com/ippontech/terraform-provider-anthropic/issues/244)) ([da611e6](https://github.com/ippontech/terraform-provider-anthropic/commit/da611e627b9f25049fed279ada8f640325779faa)), closes [#238](https://github.com/ippontech/terraform-provider-anthropic/issues/238) [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#58](https://github.com/ippontech/terraform-provider-anthropic/issues/58)
+
+## [1.43.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.43.0...v1.43.1) (2026-09-16)
+
+### 📚 Documentation
+
+* **wif:** add a "bootstrap Workload Identity Federation" guide ([#242](https://github.com/ippontech/terraform-provider-anthropic/issues/242)) ([aadaf5d](https://github.com/ippontech/terraform-provider-anthropic/commit/aadaf5daeacbbc8d53e72400ddd12b5b605f4e7c)), closes [#240](https://github.com/ippontech/terraform-provider-anthropic/issues/240) [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137)
+
+## [1.43.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.42.0...v1.43.0) (2026-09-07)
+
+### ✨ Features
+
+* **federation:** add anthropic_federation_rule_workspaces data source ([#218](https://github.com/ippontech/terraform-provider-anthropic/issues/218)) ([008bcc8](https://github.com/ippontech/terraform-provider-anthropic/commit/008bcc8345809dfbba4531adfd9d18a4267d2d4f)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [215/#217](https://github.com/215/terraform-provider-anthropic/issues/217)
+
+## [1.42.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.41.0...v1.42.0) (2026-09-07)
+
+### ✨ Features
+
+* **federation:** add anthropic_federation_rule data source ([#219](https://github.com/ippontech/terraform-provider-anthropic/issues/219)) ([aeb1fbf](https://github.com/ippontech/terraform-provider-anthropic/commit/aeb1fbf9800d713dc9e2de85152c8cc2cdda58d8)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137)
+
+## [1.41.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.40.0...v1.41.0) (2026-09-07)
+
+### ✨ Features
+
+* **federation:** add anthropic_federation_issuer data source ([#225](https://github.com/ippontech/terraform-provider-anthropic/issues/225)) ([365b666](https://github.com/ippontech/terraform-provider-anthropic/commit/365b666c2d43f3e855a3fed68af7029023e6c309)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#214](https://github.com/ippontech/terraform-provider-anthropic/issues/214) [#220](https://github.com/ippontech/terraform-provider-anthropic/issues/220)
+
+## [1.40.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.39.0...v1.40.0) (2026-09-07)
+
+### ✨ Features
+
+* **federation:** add anthropic_federation_rules data source ([#223](https://github.com/ippontech/terraform-provider-anthropic/issues/223)) ([9bab5ba](https://github.com/ippontech/terraform-provider-anthropic/commit/9bab5bae33c0a43e041357d354e22f98ee84ba5b)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137)
+
+## [1.39.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.38.0...v1.39.0) (2026-09-07)
+
+### ✨ Features
+
+* **federation:** add anthropic_federation_issuers data source ([#220](https://github.com/ippontech/terraform-provider-anthropic/issues/220)) ([d9976ea](https://github.com/ippontech/terraform-provider-anthropic/commit/d9976eac379d4a7b117f43d75910daec0acc3c87)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#214](https://github.com/ippontech/terraform-provider-anthropic/issues/214)
+
+## [1.38.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.37.0...v1.38.0) (2026-09-07)
+
+### ✨ Features
+
+* **serviceaccounts:** add anthropic_service_account_workspaces data source ([#221](https://github.com/ippontech/terraform-provider-anthropic/issues/221)) ([8011de8](https://github.com/ippontech/terraform-provider-anthropic/commit/8011de8185eafef86addfe81686da37fc4f45ebe)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [213/#216](https://github.com/213/terraform-provider-anthropic/issues/216)
+
+## [1.37.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.36.0...v1.37.0) (2026-09-07)
+
+### ✨ Features
+
+* **serviceaccounts:** add anthropic_service_account data source ([#224](https://github.com/ippontech/terraform-provider-anthropic/issues/224)) ([45f3194](https://github.com/ippontech/terraform-provider-anthropic/commit/45f319455919bb7b9cc3201c6eb472724566060e)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#222](https://github.com/ippontech/terraform-provider-anthropic/issues/222) [#213](https://github.com/ippontech/terraform-provider-anthropic/issues/213)
+
+## [1.36.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.35.1...v1.36.0) (2026-09-07)
+
+### ✨ Features
+
+* **serviceaccounts:** add anthropic_service_accounts data source ([#222](https://github.com/ippontech/terraform-provider-anthropic/issues/222)) ([00d53b8](https://github.com/ippontech/terraform-provider-anthropic/commit/00d53b8774df521570c707cd9a9104d6ed4101dd)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#213](https://github.com/ippontech/terraform-provider-anthropic/issues/213)
+
+## [1.35.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.35.0...v1.35.1) (2026-09-07)
+
+### 📚 Documentation
+
+* strip terraform blocks from registry example snippets ([#232](https://github.com/ippontech/terraform-provider-anthropic/issues/232)) ([f68b043](https://github.com/ippontech/terraform-provider-anthropic/commit/f68b043bc031ea4a1e2adf49bc9e99e1a0548d89)), closes [#225](https://github.com/ippontech/terraform-provider-anthropic/issues/225)
+
+## [1.35.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.34.0...v1.35.0) (2026-09-07)
+
+### ✨ Features
+
+* **federation:** add anthropic_federation_rule_workspace resource ([#217](https://github.com/ippontech/terraform-provider-anthropic/issues/217)) ([e7cab48](https://github.com/ippontech/terraform-provider-anthropic/commit/e7cab481b76740b485c214e6b770378b74c36112)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [215/#213](https://github.com/215/terraform-provider-anthropic/issues/213) [#215](https://github.com/ippontech/terraform-provider-anthropic/issues/215)
+
+## [1.34.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.33.0...v1.34.0) (2026-09-07)
+
+### ✨ Features
+
+* **serviceaccounts:** add anthropic_service_account_workspace resource ([#216](https://github.com/ippontech/terraform-provider-anthropic/issues/216)) ([5883ebb](https://github.com/ippontech/terraform-provider-anthropic/commit/5883ebba0d464f4c1bb54d7b432dfab9b0415ce1)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#213](https://github.com/ippontech/terraform-provider-anthropic/issues/213) [#213](https://github.com/ippontech/terraform-provider-anthropic/issues/213)
+
+## [1.33.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.32.0...v1.33.0) (2026-09-07)
+
+### ✨ Features
+
+* **federation:** add anthropic_federation_rule resource ([#215](https://github.com/ippontech/terraform-provider-anthropic/issues/215)) ([b747b1f](https://github.com/ippontech/terraform-provider-anthropic/commit/b747b1f86ce56250e53ca1bcceee3d05d045c8c5)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137)
+
+## [1.32.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.31.1...v1.32.0) (2026-09-07)
+
+### ✨ Features
+
+* **federation:** add anthropic_federation_issuer resource ([#214](https://github.com/ippontech/terraform-provider-anthropic/issues/214)) ([9cdc7f1](https://github.com/ippontech/terraform-provider-anthropic/commit/9cdc7f15a72dee2a9335eb915a93aba6cd016435)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137)
+
+## [1.31.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.31.0...v1.31.1) (2026-09-07)
+
+### 🐛 Bug Fixes
+
+* **serviceaccounts:** make the service_account native test offline ([#230](https://github.com/ippontech/terraform-provider-anthropic/issues/230)) ([d9cb34f](https://github.com/ippontech/terraform-provider-anthropic/commit/d9cb34f536cb2b2f7b05922121ea8b2412df3c36)), closes [#213](https://github.com/ippontech/terraform-provider-anthropic/issues/213) [#224](https://github.com/ippontech/terraform-provider-anthropic/issues/224) [#200](https://github.com/ippontech/terraform-provider-anthropic/issues/200)
+
+## [1.31.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.30.1...v1.31.0) (2026-09-07)
+
+### ✨ Features
+
+* **serviceaccounts:** add anthropic_service_account resource ([#213](https://github.com/ippontech/terraform-provider-anthropic/issues/213)) ([fdfd367](https://github.com/ippontech/terraform-provider-anthropic/commit/fdfd36744765d326c1cdc08b3e1e80f3bb6000c9)), closes [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137) [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137)
 
 ## [1.30.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.30.0...v1.30.1) (2026-09-04)
 

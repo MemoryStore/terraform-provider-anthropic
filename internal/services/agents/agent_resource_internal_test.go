@@ -13,10 +13,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
-	"github.com/hashicorp/terraform-plugin-framework/path"
-	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 )
 
 // TestMapAgentResponseToState_customToolInputSchema is a regression test for the
@@ -95,6 +92,273 @@ func TestMapAgentResponseToState_customToolInputSchema(t *testing.T) {
 	}
 }
 
+// TestBuildAgentToolConfigParams is a regression test for the anthropic-sdk-go
+// upgrade (v1.58 -> v1.67) that replaced the flat
+// BetaManagedAgentsAgentToolConfigParams (a `name` enum plus shared `enabled` /
+// `permission_policy` fields) with a discriminated union carrying one struct per
+// built-in tool. The Terraform `name` attribute now selects the union branch, so
+// this asserts every schema-accepted name lands on its own branch with the
+// enabled flag and permission policy carried across.
+func TestBuildAgentToolConfigParams(t *testing.T) {
+	t.Parallel()
+
+	// Each case checks the branch the name must select, and reads back the
+	// enabled/permission-policy fields from that branch.
+	tests := []struct {
+		name    string
+		extract func(anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (set bool, enabled param.Opt[bool], allow bool, ask bool)
+	}{
+		{"bash", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
+			c := u.OfBash
+			if c == nil {
+				return false, param.Opt[bool]{}, false, false
+			}
+			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
+		}},
+		{"edit", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
+			c := u.OfEdit
+			if c == nil {
+				return false, param.Opt[bool]{}, false, false
+			}
+			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
+		}},
+		{"read", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
+			c := u.OfRead
+			if c == nil {
+				return false, param.Opt[bool]{}, false, false
+			}
+			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
+		}},
+		{"write", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
+			c := u.OfWrite
+			if c == nil {
+				return false, param.Opt[bool]{}, false, false
+			}
+			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
+		}},
+		{"glob", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
+			c := u.OfGlob
+			if c == nil {
+				return false, param.Opt[bool]{}, false, false
+			}
+			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
+		}},
+		{"grep", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
+			c := u.OfGrep
+			if c == nil {
+				return false, param.Opt[bool]{}, false, false
+			}
+			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
+		}},
+		{"web_fetch", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
+			c := u.OfWebFetch
+			if c == nil {
+				return false, param.Opt[bool]{}, false, false
+			}
+			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
+		}},
+		{"web_search", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
+			c := u.OfWebSearch
+			if c == nil {
+				return false, param.Opt[bool]{}, false, false
+			}
+			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
+		}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name+"/always_allow", func(t *testing.T) {
+			t.Parallel()
+
+			u, diags := buildAgentToolConfigParams(tc.name, param.NewOpt(true), "always_allow")
+			if diags.HasError() {
+				t.Fatalf("unexpected diagnostics: %v", diags)
+			}
+			set, enabled, allow, ask := tc.extract(u)
+			if !set {
+				t.Fatalf("name %q did not select its own union branch", tc.name)
+			}
+			if !enabled.Valid() || !enabled.Value {
+				t.Errorf("enabled = %+v, want set to true", enabled)
+			}
+			if !allow || ask {
+				t.Errorf("permission policy = (allow=%t, ask=%t), want (true, false)", allow, ask)
+			}
+		})
+
+		t.Run(tc.name+"/always_ask", func(t *testing.T) {
+			t.Parallel()
+
+			u, diags := buildAgentToolConfigParams(tc.name, param.NewOpt(false), "always_ask")
+			if diags.HasError() {
+				t.Fatalf("unexpected diagnostics: %v", diags)
+			}
+			set, enabled, allow, ask := tc.extract(u)
+			if !set {
+				t.Fatalf("name %q did not select its own union branch", tc.name)
+			}
+			if !enabled.Valid() || enabled.Value {
+				t.Errorf("enabled = %+v, want set to false", enabled)
+			}
+			if allow || !ask {
+				t.Errorf("permission policy = (allow=%t, ask=%t), want (false, true)", allow, ask)
+			}
+		})
+
+		// An omitted permission_policy must leave both variants unset so the
+		// field is elided from the request and the toolset default applies.
+		t.Run(tc.name+"/no_policy", func(t *testing.T) {
+			t.Parallel()
+
+			u, diags := buildAgentToolConfigParams(tc.name, param.Opt[bool]{}, "")
+			if diags.HasError() {
+				t.Fatalf("unexpected diagnostics: %v", diags)
+			}
+			set, enabled, allow, ask := tc.extract(u)
+			if !set {
+				t.Fatalf("name %q did not select its own union branch", tc.name)
+			}
+			if enabled.Valid() {
+				t.Errorf("enabled = %+v, want unset", enabled)
+			}
+			if allow || ask {
+				t.Errorf("permission policy = (allow=%t, ask=%t), want both unset", allow, ask)
+			}
+		})
+	}
+}
+
+// TestBuildAgentToolConfigParams_unknownName guards the union's default branch:
+// a name outside the eight built-ins must surface a diagnostic rather than
+// silently produce an empty union that marshals without a discriminator.
+func TestBuildAgentToolConfigParams_unknownName(t *testing.T) {
+	t.Parallel()
+
+	_, diags := buildAgentToolConfigParams("not_a_tool", param.NewOpt(true), "always_allow")
+	if !diags.HasError() {
+		t.Fatal("expected an error diagnostic for an unsupported tool name, got none")
+	}
+	if got := diags.Errors()[0].Detail(); !strings.Contains(got, "not_a_tool") {
+		t.Errorf("diagnostic detail = %q, want it to name the offending value", got)
+	}
+}
+
+func modelParamsJSON(t *testing.T, m anthropic.BetaManagedAgentsModelConfigParams) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal model params: %s", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("unmarshal model params: %s", err)
+	}
+	return out
+}
+
+func TestBuildModelConfigParams(t *testing.T) {
+	t.Parallel()
+
+	base := func(effort, geo types.String) AgentResourceModel {
+		return AgentResourceModel{
+			Model:             types.StringValue("claude-sonnet-4-6"),
+			ModelSpeed:        types.StringNull(),
+			ModelEffort:       effort,
+			ModelInferenceGeo: geo,
+		}
+	}
+
+	tests := []struct {
+		name string
+		plan AgentResourceModel
+		want map[string]any
+	}{
+		{
+			name: "create with effort and geo",
+			plan: base(types.StringValue("high"), types.StringValue("us")),
+			want: map[string]any{"id": "claude-sonnet-4-6", "effort": "high", "inference_geo": "us"},
+		},
+		{
+			name: "create with unknown effort omits it",
+			plan: base(types.StringUnknown(), types.StringNull()),
+			want: map[string]any{"id": "claude-sonnet-4-6"},
+		},
+		{
+			name: "update sends planned effort",
+			plan: base(types.StringValue("low"), types.StringNull()),
+			want: map[string]any{"id": "claude-sonnet-4-6", "effort": "low"},
+		},
+		{
+			name: "update with null geo omits it so the pin is cleared",
+			plan: base(types.StringValue("high"), types.StringNull()),
+			want: map[string]any{"id": "claude-sonnet-4-6", "effort": "high"},
+		},
+		{
+			name: "update keeps unchanged geo",
+			plan: base(types.StringValue("high"), types.StringValue("us")),
+			want: map[string]any{"id": "claude-sonnet-4-6", "effort": "high", "inference_geo": "us"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := modelParamsJSON(t, buildModelConfigParams(tt.plan))
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for k, v := range tt.want {
+				if got[k] != v {
+					t.Errorf("%s: got %v, want %v (full: %v)", k, got[k], v, got)
+				}
+			}
+		})
+	}
+}
+
+func TestMapAgentResponseToState_modelEffortAndGeo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("present", func(t *testing.T) {
+		t.Parallel()
+		data := AgentResourceModel{ModelEffort: types.StringUnknown()}
+		agent := parseAgentFixture(t, `{"id":"claude-sonnet-4-6","effort":{"type":"xhigh"},"inference_geo":"us"}`)
+		if diags := mapAgentResponseToState(context.Background(), agent, &data); diags.HasError() {
+			t.Fatalf("diags: %+v", diags)
+		}
+		if data.ModelEffort.ValueString() != "xhigh" || data.ModelInferenceGeo.ValueString() != "us" {
+			t.Errorf("got effort=%v geo=%v", data.ModelEffort, data.ModelInferenceGeo)
+		}
+	})
+
+	t.Run("absent resolves unknown to null", func(t *testing.T) {
+		t.Parallel()
+		data := AgentResourceModel{ModelEffort: types.StringUnknown()}
+		agent := parseAgentFixture(t, `{"id":"claude-sonnet-4-6"}`)
+		if diags := mapAgentResponseToState(context.Background(), agent, &data); diags.HasError() {
+			t.Fatalf("diags: %+v", diags)
+		}
+		if !data.ModelEffort.IsNull() || !data.ModelInferenceGeo.IsNull() {
+			t.Errorf("got effort=%v geo=%v, want null", data.ModelEffort, data.ModelInferenceGeo)
+		}
+	})
+
+	t.Run("empty and null map to null", func(t *testing.T) {
+		t.Parallel()
+		for _, model := range []string{
+			`{"id":"claude-sonnet-4-6","effort":null,"inference_geo":""}`,
+			`{"id":"claude-sonnet-4-6","inference_geo":null}`,
+		} {
+			data := AgentResourceModel{}
+			if diags := mapAgentResponseToState(context.Background(), parseAgentFixture(t, model), &data); diags.HasError() {
+				t.Fatalf("diags: %+v", diags)
+			}
+			if !data.ModelEffort.IsNull() || !data.ModelInferenceGeo.IsNull() {
+				t.Errorf("%s: got effort=%v geo=%v, want null", model, data.ModelEffort, data.ModelInferenceGeo)
+			}
+		}
+	})
+}
+
 const configuredInputSchemaWithAdditionalProperties = `{"type":"object","properties":{"email":{"type":"string"}},"required":["email"],"additionalProperties":false}`
 
 func TestCustomToolInputSchemaParam_preservesAdditionalProperties(t *testing.T) {
@@ -120,20 +384,9 @@ func TestCustomToolInputSchemaParam_preservesAdditionalProperties(t *testing.T) 
 func TestBuildToolsParams_preservesAdditionalProperties(t *testing.T) {
 	t.Parallel()
 
-	tool, diags := types.ObjectValue(agentCustomToolAttrTypes, map[string]attr.Value{
-		"name":         types.StringValue("lookup_user"),
-		"description":  types.StringValue("Look up a user"),
-		"input_schema": jsontypes.NewNormalizedValue(configuredInputSchemaWithAdditionalProperties),
+	built, diags := buildToolsParams(context.Background(), AgentResourceModel{
+		CustomTools: mustCustomToolsList(t, "lookup_user", "Look up a user", configuredInputSchemaWithAdditionalProperties),
 	})
-	if diags.HasError() {
-		t.Fatalf("tool object: %+v", diags)
-	}
-	toolsList, diags := types.ListValue(types.ObjectType{AttrTypes: agentCustomToolAttrTypes}, []attr.Value{tool})
-	if diags.HasError() {
-		t.Fatalf("tools list: %+v", diags)
-	}
-
-	built, diags := buildToolsParams(context.Background(), AgentResourceModel{CustomTools: toolsList})
 	if diags.HasError() {
 		t.Fatalf("buildToolsParams: %+v", diags)
 	}
@@ -323,509 +576,4 @@ func firstCustomToolInputSchema(t *testing.T, data AgentResourceModel) jsontypes
 		t.Fatalf("expected 1 custom tool, got %d", len(tools))
 	}
 	return tools[0].InputSchema
-}
-
-func TestMapAgentResponseToState_effortAndMultiagentSelf(t *testing.T) {
-	t.Parallel()
-
-	agentJSON := `{
-		"id": "agent_coordinator",
-		"name": "coordinator",
-		"model": {"id": "claude-sonnet-4-6", "effort": {"type": "medium"}},
-		"multiagent": {
-			"type": "coordinator",
-			"agents": [{"type": "agent", "id": "agent_coordinator", "version": 3}]
-		},
-		"version": 3,
-		"created_at": "2026-01-01T00:00:00Z",
-		"updated_at": "2026-01-01T00:00:00Z",
-		"tools": []
-	}`
-
-	var agent anthropic.BetaManagedAgentsAgent
-	if err := json.Unmarshal([]byte(agentJSON), &agent); err != nil {
-		t.Fatalf("failed to unmarshal agent fixture: %s", err)
-	}
-
-	roster, diags := types.ListValue(
-		types.ObjectType{AttrTypes: agentMultiagentEntryAttrTypes},
-		[]attr.Value{types.ObjectValueMust(agentMultiagentEntryAttrTypes, map[string]attr.Value{
-			"type":    types.StringValue("self"),
-			"id":      types.StringNull(),
-			"version": types.Int64Null(),
-		})},
-	)
-	if diags.HasError() {
-		t.Fatalf("failed to build roster state: %+v", diags)
-	}
-
-	data := AgentResourceModel{
-		Multiagent: types.ObjectValueMust(agentMultiagentAttrTypes, map[string]attr.Value{
-			"type":   types.StringValue("coordinator"),
-			"agents": roster,
-		}),
-	}
-	if diags := mapAgentResponseToState(context.Background(), &agent, &data); diags.HasError() {
-		t.Fatalf("mapAgentResponseToState returned errors: %+v", diags)
-	}
-
-	if got := data.ModelEffort.ValueString(); got != "medium" {
-		t.Fatalf("expected model_effort medium, got %q", got)
-	}
-
-	var topology agentMultiagentModel
-	if diags := data.Multiagent.As(context.Background(), &topology, basetypes.ObjectAsOptions{}); diags.HasError() {
-		t.Fatalf("failed to read multiagent state: %+v", diags)
-	}
-	var entries []agentMultiagentEntryModel
-	if diags := topology.Agents.ElementsAs(context.Background(), &entries, false); diags.HasError() {
-		t.Fatalf("failed to read roster state: %+v", diags)
-	}
-	if len(entries) != 1 || entries[0].Type.ValueString() != "self" {
-		t.Fatalf("expected the configured self sentinel to be preserved, got %+v", entries)
-	}
-	if !entries[0].ID.IsNull() || !entries[0].Version.IsNull() {
-		t.Fatalf("self entry must not gain a resolved id or version: %+v", entries[0])
-	}
-}
-
-func TestMapAgentResponseToState_importInfersResolvedSelf(t *testing.T) {
-	t.Parallel()
-
-	agentJSON := `{
-		"id": "agent_coordinator",
-		"name": "coordinator",
-		"model": {"id": "claude-sonnet-4-6"},
-		"multiagent": {
-			"type": "coordinator",
-			"agents": [
-				{"type": "agent", "id": "agent_coordinator", "version": 3},
-				{"type": "agent", "id": "agent_worker", "version": 2}
-			]
-		},
-		"version": 3,
-		"created_at": "2026-01-01T00:00:00Z",
-		"updated_at": "2026-01-01T00:00:00Z",
-		"tools": []
-	}`
-
-	var agent anthropic.BetaManagedAgentsAgent
-	if err := json.Unmarshal([]byte(agentJSON), &agent); err != nil {
-		t.Fatalf("failed to unmarshal agent fixture: %s", err)
-	}
-
-	// Import initially populates only the resource ID, so no prior roster is
-	// available to identify the API's resolved self-reference.
-	data := AgentResourceModel{Multiagent: types.ObjectNull(agentMultiagentAttrTypes)}
-	if diags := mapAgentResponseToState(context.Background(), &agent, &data); diags.HasError() {
-		t.Fatalf("mapAgentResponseToState returned errors: %+v", diags)
-	}
-
-	var topology agentMultiagentModel
-	if diags := data.Multiagent.As(context.Background(), &topology, basetypes.ObjectAsOptions{}); diags.HasError() {
-		t.Fatalf("failed to read multiagent state: %+v", diags)
-	}
-	var entries []agentMultiagentEntryModel
-	if diags := topology.Agents.ElementsAs(context.Background(), &entries, false); diags.HasError() {
-		t.Fatalf("failed to read roster state: %+v", diags)
-	}
-	if len(entries) != 2 {
-		t.Fatalf("expected two roster entries, got %d", len(entries))
-	}
-	if entries[0].Type.ValueString() != "self" || !entries[0].ID.IsNull() || !entries[0].Version.IsNull() {
-		t.Fatalf("expected resolved owner reference to map to self, got %+v", entries[0])
-	}
-	if entries[1].Type.ValueString() != "agent" || entries[1].ID.ValueString() != "agent_worker" || entries[1].Version.ValueInt64() != 2 {
-		t.Fatalf("expected worker reference to remain concrete, got %+v", entries[1])
-	}
-}
-
-func TestMultiagentRosterEntryValidator(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name        string
-		entryType   types.String
-		id          types.String
-		version     types.Int64
-		wantSummary string
-	}{
-		{
-			name:        "agent requires id",
-			entryType:   types.StringValue("agent"),
-			id:          types.StringNull(),
-			version:     types.Int64Null(),
-			wantSummary: "Missing agent ID",
-		},
-		{
-			name:        "agent id must be nonempty",
-			entryType:   types.StringValue("agent"),
-			id:          types.StringValue("  "),
-			version:     types.Int64Null(),
-			wantSummary: "Invalid agent ID",
-		},
-		{
-			name:        "self forbids id",
-			entryType:   types.StringValue("self"),
-			id:          types.StringValue("agent_123"),
-			version:     types.Int64Null(),
-			wantSummary: "Invalid self roster entry",
-		},
-		{
-			name:        "self forbids version",
-			entryType:   types.StringValue("self"),
-			id:          types.StringNull(),
-			version:     types.Int64Value(1),
-			wantSummary: "Invalid self roster entry",
-		},
-		{
-			name:      "valid agent",
-			entryType: types.StringValue("agent"),
-			id:        types.StringValue("agent_123"),
-			version:   types.Int64Value(2),
-		},
-		{
-			name:      "valid self",
-			entryType: types.StringValue("self"),
-			id:        types.StringNull(),
-			version:   types.Int64Null(),
-		},
-		{
-			name:      "unknown agent id is deferred",
-			entryType: types.StringValue("agent"),
-			id:        types.StringUnknown(),
-			version:   types.Int64Unknown(),
-		},
-		{
-			name:      "unknown type is deferred",
-			entryType: types.StringUnknown(),
-			id:        types.StringValue("agent_123"),
-			version:   types.Int64Value(1),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			entry := types.ObjectValueMust(agentMultiagentEntryAttrTypes, map[string]attr.Value{
-				"type":    tt.entryType,
-				"id":      tt.id,
-				"version": tt.version,
-			})
-			var resp validator.ObjectResponse
-			multiagentRosterEntryValidator{}.ValidateObject(
-				context.Background(),
-				validator.ObjectRequest{Path: path.Root("entry"), ConfigValue: entry},
-				&resp,
-			)
-
-			if tt.wantSummary == "" {
-				if resp.Diagnostics.HasError() {
-					t.Fatalf("unexpected diagnostics: %+v", resp.Diagnostics)
-				}
-				return
-			}
-			for _, diagnostic := range resp.Diagnostics {
-				if diagnostic.Summary() == tt.wantSummary {
-					return
-				}
-			}
-			t.Fatalf("expected diagnostic %q, got %+v", tt.wantSummary, resp.Diagnostics)
-		})
-	}
-}
-
-func TestMultiagentRosterValidator(t *testing.T) {
-	t.Parallel()
-
-	entry := func(entryType string, id types.String) attr.Value {
-		return types.ObjectValueMust(agentMultiagentEntryAttrTypes, map[string]attr.Value{
-			"type":    types.StringValue(entryType),
-			"id":      id,
-			"version": types.Int64Null(),
-		})
-	}
-	tests := []struct {
-		name        string
-		entries     []attr.Value
-		wantSummary string
-	}{
-		{
-			name: "valid distinct roster",
-			entries: []attr.Value{
-				entry("self", types.StringNull()),
-				entry("agent", types.StringValue("agent_1")),
-				entry("agent", types.StringValue("agent_2")),
-			},
-		},
-		{
-			name: "duplicate self",
-			entries: []attr.Value{
-				entry("self", types.StringNull()),
-				entry("self", types.StringNull()),
-			},
-			wantSummary: "Duplicate self roster entry",
-		},
-		{
-			name: "duplicate agent",
-			entries: []attr.Value{
-				entry("agent", types.StringValue("agent_1")),
-				entry("agent", types.StringValue("agent_1")),
-			},
-			wantSummary: "Duplicate agent roster entry",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			roster := types.ListValueMust(types.ObjectType{AttrTypes: agentMultiagentEntryAttrTypes}, tt.entries)
-			var resp validator.ListResponse
-			multiagentRosterValidator{}.ValidateList(
-				context.Background(),
-				validator.ListRequest{Path: path.Root("agents"), ConfigValue: roster},
-				&resp,
-			)
-
-			if tt.wantSummary == "" {
-				if resp.Diagnostics.HasError() {
-					t.Fatalf("unexpected diagnostics: %+v", resp.Diagnostics)
-				}
-				return
-			}
-			for _, diagnostic := range resp.Diagnostics {
-				if diagnostic.Summary() == tt.wantSummary {
-					return
-				}
-			}
-			t.Fatalf("expected diagnostic %q, got %+v", tt.wantSummary, resp.Diagnostics)
-		})
-	}
-}
-
-func TestValidateResolvedMultiagentEntries(t *testing.T) {
-	t.Parallel()
-
-	entry := func(entryType types.String, id types.String, version types.Int64) agentMultiagentEntryModel {
-		return agentMultiagentEntryModel{Type: entryType, ID: id, Version: version}
-	}
-	tests := []struct {
-		name        string
-		entries     []agentMultiagentEntryModel
-		wantSummary string
-	}{
-		{
-			name: "valid resolved roster",
-			entries: []agentMultiagentEntryModel{
-				entry(types.StringValue("self"), types.StringNull(), types.Int64Unknown()),
-				entry(types.StringValue("agent"), types.StringValue("agent_1"), types.Int64Unknown()),
-			},
-		},
-		{
-			name: "resolved self id is rejected",
-			entries: []agentMultiagentEntryModel{
-				entry(types.StringValue("self"), types.StringValue("agent_1"), types.Int64Unknown()),
-			},
-			wantSummary: "Invalid self roster entry",
-		},
-		{
-			name: "resolved self version is rejected",
-			entries: []agentMultiagentEntryModel{
-				entry(types.StringValue("self"), types.StringNull(), types.Int64Value(1)),
-			},
-			wantSummary: "Invalid self roster entry",
-		},
-		{
-			name: "unresolved agent id is rejected before request",
-			entries: []agentMultiagentEntryModel{
-				entry(types.StringValue("agent"), types.StringUnknown(), types.Int64Unknown()),
-			},
-			wantSummary: "Invalid agent ID",
-		},
-		{
-			name: "resolved duplicate agents are rejected",
-			entries: []agentMultiagentEntryModel{
-				entry(types.StringValue("agent"), types.StringValue("agent_1"), types.Int64Value(1)),
-				entry(types.StringValue("agent"), types.StringValue("agent_1"), types.Int64Value(2)),
-			},
-			wantSummary: "Duplicate agent roster entry",
-		},
-		{
-			name: "resolved invalid version is rejected",
-			entries: []agentMultiagentEntryModel{
-				entry(types.StringValue("agent"), types.StringValue("agent_1"), types.Int64Value(0)),
-			},
-			wantSummary: "Invalid agent version",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			diagnostics := validateResolvedMultiagentEntries(tt.entries)
-			if tt.wantSummary == "" {
-				if diagnostics.HasError() {
-					t.Fatalf("unexpected diagnostics: %+v", diagnostics)
-				}
-				return
-			}
-			for _, diagnostic := range diagnostics {
-				if diagnostic.Summary() == tt.wantSummary {
-					return
-				}
-			}
-			t.Fatalf("expected diagnostic %q, got %+v", tt.wantSummary, diagnostics)
-		})
-	}
-}
-
-// TestBuildAgentToolConfigParams is a regression test for the anthropic-sdk-go
-// upgrade (v1.58 -> v1.67) that replaced the flat
-// BetaManagedAgentsAgentToolConfigParams (a `name` enum plus shared `enabled` /
-// `permission_policy` fields) with a discriminated union carrying one struct per
-// built-in tool. The Terraform `name` attribute now selects the union branch, so
-// this asserts every schema-accepted name lands on its own branch with the
-// enabled flag and permission policy carried across.
-func TestBuildAgentToolConfigParams(t *testing.T) {
-	t.Parallel()
-
-	// Each case checks the branch the name must select, and reads back the
-	// enabled/permission-policy fields from that branch.
-	tests := []struct {
-		name    string
-		extract func(anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (set bool, enabled param.Opt[bool], allow bool, ask bool)
-	}{
-		{"bash", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
-			c := u.OfBash
-			if c == nil {
-				return false, param.Opt[bool]{}, false, false
-			}
-			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
-		}},
-		{"edit", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
-			c := u.OfEdit
-			if c == nil {
-				return false, param.Opt[bool]{}, false, false
-			}
-			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
-		}},
-		{"read", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
-			c := u.OfRead
-			if c == nil {
-				return false, param.Opt[bool]{}, false, false
-			}
-			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
-		}},
-		{"write", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
-			c := u.OfWrite
-			if c == nil {
-				return false, param.Opt[bool]{}, false, false
-			}
-			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
-		}},
-		{"glob", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
-			c := u.OfGlob
-			if c == nil {
-				return false, param.Opt[bool]{}, false, false
-			}
-			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
-		}},
-		{"grep", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
-			c := u.OfGrep
-			if c == nil {
-				return false, param.Opt[bool]{}, false, false
-			}
-			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
-		}},
-		{"web_fetch", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
-			c := u.OfWebFetch
-			if c == nil {
-				return false, param.Opt[bool]{}, false, false
-			}
-			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
-		}},
-		{"web_search", func(u anthropic.BetaManagedAgentsAgentToolConfigParamsUnion) (bool, param.Opt[bool], bool, bool) {
-			c := u.OfWebSearch
-			if c == nil {
-				return false, param.Opt[bool]{}, false, false
-			}
-			return true, c.Enabled, c.PermissionPolicy.OfAlwaysAllow != nil, c.PermissionPolicy.OfAlwaysAsk != nil
-		}},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name+"/always_allow", func(t *testing.T) {
-			t.Parallel()
-
-			u, diags := buildAgentToolConfigParams(tc.name, param.NewOpt(true), "always_allow")
-			if diags.HasError() {
-				t.Fatalf("unexpected diagnostics: %v", diags)
-			}
-			set, enabled, allow, ask := tc.extract(u)
-			if !set {
-				t.Fatalf("name %q did not select its own union branch", tc.name)
-			}
-			if !enabled.Valid() || !enabled.Value {
-				t.Errorf("enabled = %+v, want set to true", enabled)
-			}
-			if !allow || ask {
-				t.Errorf("permission policy = (allow=%t, ask=%t), want (true, false)", allow, ask)
-			}
-		})
-
-		t.Run(tc.name+"/always_ask", func(t *testing.T) {
-			t.Parallel()
-
-			u, diags := buildAgentToolConfigParams(tc.name, param.NewOpt(false), "always_ask")
-			if diags.HasError() {
-				t.Fatalf("unexpected diagnostics: %v", diags)
-			}
-			set, enabled, allow, ask := tc.extract(u)
-			if !set {
-				t.Fatalf("name %q did not select its own union branch", tc.name)
-			}
-			if !enabled.Valid() || enabled.Value {
-				t.Errorf("enabled = %+v, want set to false", enabled)
-			}
-			if allow || !ask {
-				t.Errorf("permission policy = (allow=%t, ask=%t), want (false, true)", allow, ask)
-			}
-		})
-
-		// An omitted permission_policy must leave both variants unset so the
-		// field is elided from the request and the toolset default applies.
-		t.Run(tc.name+"/no_policy", func(t *testing.T) {
-			t.Parallel()
-
-			u, diags := buildAgentToolConfigParams(tc.name, param.Opt[bool]{}, "")
-			if diags.HasError() {
-				t.Fatalf("unexpected diagnostics: %v", diags)
-			}
-			set, enabled, allow, ask := tc.extract(u)
-			if !set {
-				t.Fatalf("name %q did not select its own union branch", tc.name)
-			}
-			if enabled.Valid() {
-				t.Errorf("enabled = %+v, want unset", enabled)
-			}
-			if allow || ask {
-				t.Errorf("permission policy = (allow=%t, ask=%t), want both unset", allow, ask)
-			}
-		})
-	}
-}
-
-// TestBuildAgentToolConfigParams_unknownName guards the union's default branch:
-// a name outside the eight built-ins must surface a diagnostic rather than
-// silently produce an empty union that marshals without a discriminator.
-func TestBuildAgentToolConfigParams_unknownName(t *testing.T) {
-	t.Parallel()
-
-	_, diags := buildAgentToolConfigParams("not_a_tool", param.NewOpt(true), "always_allow")
-	if !diags.HasError() {
-		t.Fatal("expected an error diagnostic for an unsupported tool name, got none")
-	}
-	if got := diags.Errors()[0].Detail(); !strings.Contains(got, "not_a_tool") {
-		t.Errorf("diagnostic detail = %q, want it to name the offending value", got)
-	}
 }

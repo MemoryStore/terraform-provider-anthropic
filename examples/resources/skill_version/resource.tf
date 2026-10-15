@@ -1,14 +1,3 @@
-terraform {
-  required_version = "~> 1.0"
-
-  required_providers {
-    anthropic = {
-      source  = "registry.terraform.io/MemoryStore/anthropic"
-      version = "~> 1.0"
-    }
-  }
-}
-
 locals {
   # Explicit patterns avoid sweeping the Terraform config itself into the
   # bundle. The provider preserves each file's path relative to the bundle
@@ -32,17 +21,21 @@ resource "anthropic_skill_version" "example" {
 }
 
 output "skill_version_id" {
-  value = anthropic_skill_version.example.id
+  description = "ID of the skill version."
+  value       = anthropic_skill_version.example.id
 }
 
 output "version" {
-  value = anthropic_skill_version.example.version
+  description = "Version identifier of the skill version."
+  value       = anthropic_skill_version.example.version
 }
 
 output "name" {
-  value = anthropic_skill_version.example.name
+  description = "Name of the skill version."
+  value       = anthropic_skill_version.example.name
 }
 
 output "created_at" {
-  value = anthropic_skill_version.example.created_at
+  description = "Creation timestamp of the skill version (RFC 3339)."
+  value       = anthropic_skill_version.example.created_at
 }

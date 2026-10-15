@@ -45,24 +45,25 @@ type AgentsDataSourceModel struct {
 // agentListItemAttrTypes describes the attribute types of each element in the
 // "agents" list. It mirrors the single-agent data source / resource schema.
 var agentListItemAttrTypes = map[string]attr.Type{
-	"id":            types.StringType,
-	"name":          types.StringType,
-	"model":         types.StringType,
-	"model_effort":  types.StringType,
-	"model_speed":   types.StringType,
-	"description":   types.StringType,
-	"system":        types.StringType,
-	"metadata":      types.MapType{ElemType: types.StringType},
-	"mcp_servers":   types.ListType{ElemType: types.ObjectType{AttrTypes: agentMCPServerAttrTypes}},
-	"skills":        types.ListType{ElemType: types.ObjectType{AttrTypes: agentSkillAttrTypes}},
-	"agent_toolset": types.ObjectType{AttrTypes: agentToolsetAttrTypes},
-	"mcp_toolsets":  types.ListType{ElemType: types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes}},
-	"custom_tools":  types.ListType{ElemType: types.ObjectType{AttrTypes: agentCustomToolAttrTypes}},
-	"multiagent":    types.ObjectType{AttrTypes: agentMultiagentAttrTypes},
-	"version":       types.Int64Type,
-	"created_at":    types.StringType,
-	"updated_at":    types.StringType,
-	"archived_at":   types.StringType,
+	"id":                  types.StringType,
+	"name":                types.StringType,
+	"model":               types.StringType,
+	"model_speed":         types.StringType,
+	"model_effort":        types.StringType,
+	"model_inference_geo": types.StringType,
+	"description":         types.StringType,
+	"system":              types.StringType,
+	"metadata":            types.MapType{ElemType: types.StringType},
+	"mcp_servers":         types.ListType{ElemType: types.ObjectType{AttrTypes: agentMCPServerAttrTypes}},
+	"skills":              types.ListType{ElemType: types.ObjectType{AttrTypes: agentSkillAttrTypes}},
+	"agent_toolset":       types.ObjectType{AttrTypes: agentToolsetAttrTypes},
+	"mcp_toolsets":        types.ListType{ElemType: types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes}},
+	"custom_tools":        types.ListType{ElemType: types.ObjectType{AttrTypes: agentCustomToolAttrTypes}},
+	"multiagent":          types.ObjectType{AttrTypes: agentMultiagentAttrTypes},
+	"version":             types.Int64Type,
+	"created_at":          types.StringType,
+	"updated_at":          types.StringType,
+	"archived_at":         types.StringType,
 }
 
 func (d *AgentsDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -109,13 +110,17 @@ func (d *AgentsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 							Computed:            true,
 							MarkdownDescription: "The model that powers the agent.",
 						},
-						"model_effort": schema.StringAttribute{
-							Computed:            true,
-							MarkdownDescription: "How hard Claude works on each turn.",
-						},
 						"model_speed": schema.StringAttribute{
 							Computed:            true,
 							MarkdownDescription: "Inference speed mode: `standard` or `fast`.",
+						},
+						"model_effort": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "Effort level of the agent's model (`low`, `medium`, `high`, `xhigh` or `max`).",
+						},
+						"model_inference_geo": schema.StringAttribute{
+							Computed:            true,
+							MarkdownDescription: "Geographic region pinned for the agent's model requests, or null when unpinned.",
 						},
 						"description": schema.StringAttribute{
 							Computed:            true,
@@ -263,29 +268,21 @@ func (d *AgentsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 						},
 						"multiagent": schema.SingleNestedAttribute{
 							Computed:            true,
-							MarkdownDescription: "Resolved coordinator configuration for multiagent delegation.",
+							MarkdownDescription: "Coordinator topology, null when the agent has none. A `self` roster entry is resolved by the API into an `agent` entry carrying the agent's own ID.",
 							Attributes: map[string]schema.Attribute{
 								"type": schema.StringAttribute{
 									Computed:            true,
-									MarkdownDescription: "Multiagent topology type.",
+									MarkdownDescription: "Topology type (`coordinator`).",
 								},
 								"agents": schema.ListNestedAttribute{
 									Computed:            true,
-									MarkdownDescription: "Resolved agents in the coordinator roster.",
+									MarkdownDescription: "Resolved roster of agents the coordinator may spawn.",
 									NestedObject: schema.NestedAttributeObject{
 										Attributes: map[string]schema.Attribute{
-											"type": schema.StringAttribute{
-												Computed:            true,
-												MarkdownDescription: "Roster entry type.",
-											},
-											"id": schema.StringAttribute{
-												Computed:            true,
-												MarkdownDescription: "Resolved agent ID.",
-											},
-											"version": schema.Int64Attribute{
-												Computed:            true,
-												MarkdownDescription: "Resolved agent version.",
-											},
+											"type":    schema.StringAttribute{Computed: true, MarkdownDescription: "Entry type: `agent` or `advisor`."},
+											"id":      schema.StringAttribute{Computed: true, MarkdownDescription: "Referenced agent ID (`agent` entries)."},
+											"version": schema.Int64Attribute{Computed: true, MarkdownDescription: "Resolved version of the referenced agent (`agent` entries)."},
+											"model":   schema.StringAttribute{Computed: true, MarkdownDescription: "Advisor model ID (`advisor` entries)."},
 										},
 									},
 								},
@@ -416,11 +413,6 @@ func mapAgentToDataSourceObject(agent *anthropic.BetaManagedAgentsAgent) (attr.V
 		modelSpeed = types.StringValue(string(agent.Model.Speed))
 	}
 
-	modelEffort := types.StringNull()
-	if agent.Model.Effort.Type != "" {
-		modelEffort = types.StringValue(agent.Model.Effort.Type)
-	}
-
 	description := types.StringNull()
 	if agent.Description != "" {
 		description = types.StringValue(agent.Description)
@@ -538,37 +530,34 @@ func mapAgentToDataSourceObject(agent *anthropic.BetaManagedAgentsAgent) (attr.V
 		customToolsList = list
 	}
 
+	multiagentObj, d := mapMultiagentToObject(agent.Multiagent)
+	diags.Append(d...)
+
 	archivedAt := types.StringNull()
 	if !agent.ArchivedAt.IsZero() {
 		archivedAt = types.StringValue(agent.ArchivedAt.Format(time.RFC3339))
 	}
 
-	multiagent := types.ObjectNull(agentMultiagentAttrTypes)
-	if agent.Multiagent.Type != "" {
-		var d diag.Diagnostics
-		multiagent, d = mapResolvedMultiagentToDataSource(&agent.Multiagent)
-		diags.Append(d...)
-	}
-
 	obj, d := types.ObjectValue(agentListItemAttrTypes, map[string]attr.Value{
-		"id":            types.StringValue(agent.ID),
-		"name":          types.StringValue(agent.Name),
-		"model":         types.StringValue(string(agent.Model.ID)),
-		"model_effort":  modelEffort,
-		"model_speed":   modelSpeed,
-		"description":   description,
-		"system":        system,
-		"metadata":      metadata,
-		"mcp_servers":   mcpServersList,
-		"skills":        skillsList,
-		"agent_toolset": agentToolsetObj,
-		"mcp_toolsets":  mcpToolsetsList,
-		"custom_tools":  customToolsList,
-		"multiagent":    multiagent,
-		"version":       types.Int64Value(agent.Version),
-		"created_at":    types.StringValue(agent.CreatedAt.Format(time.RFC3339)),
-		"updated_at":    types.StringValue(agent.UpdatedAt.Format(time.RFC3339)),
-		"archived_at":   archivedAt,
+		"id":                  types.StringValue(agent.ID),
+		"name":                types.StringValue(agent.Name),
+		"model":               types.StringValue(string(agent.Model.ID)),
+		"model_speed":         modelSpeed,
+		"model_effort":        modelEffortFromResponse(agent.Model),
+		"model_inference_geo": modelInferenceGeoFromResponse(agent.Model),
+		"description":         description,
+		"system":              system,
+		"metadata":            metadata,
+		"mcp_servers":         mcpServersList,
+		"skills":              skillsList,
+		"agent_toolset":       agentToolsetObj,
+		"mcp_toolsets":        mcpToolsetsList,
+		"custom_tools":        customToolsList,
+		"multiagent":          multiagentObj,
+		"version":             types.Int64Value(agent.Version),
+		"created_at":          types.StringValue(agent.CreatedAt.Format(time.RFC3339)),
+		"updated_at":          types.StringValue(agent.UpdatedAt.Format(time.RFC3339)),
+		"archived_at":         archivedAt,
 	})
 	diags.Append(d...)
 	return obj, diags

@@ -17,43 +17,12 @@ Creates and manages a Managed Agent on the Anthropic platform (beta). Agents are
 ## Example Usage
 
 ```hcl
-terraform {
-  required_version = ">= 1.0"
-
-  required_providers {
-    anthropic = {
-      source  = "registry.terraform.io/MemoryStore/anthropic"
-      version = "~> 0.1.0"
-    }
-  }
-}
-
-# Minimal agent
+# Minimal agent. model_effort is optional: when omitted, the API resolves a
+# per-model default and stores it in state.
 resource "anthropic_agent" "simple" {
   model        = "claude-sonnet-4-6"
-  model_effort = "high"
   name         = "Simple Agent"
-}
-
-# Coordinator agent that can delegate to another managed agent
-resource "anthropic_agent" "coordinator" {
-  model        = "claude-sonnet-4-6"
   model_effort = "high"
-  name         = "Support Coordinator"
-
-  multiagent = {
-    type = "coordinator"
-    agents = [
-      {
-        type = "self"
-      },
-      {
-        type    = "agent"
-        id      = anthropic_agent.assistant.id
-        version = anthropic_agent.assistant.version
-      }
-    ]
-  }
 }
 
 # Agent with system prompt and description
@@ -141,12 +110,45 @@ resource "anthropic_agent" "custom_tools" {
   ]
 }
 
+# Coordinator agent that can delegate to another agent and to itself.
+# The members must not have their own multiagent roster (depth limit 1).
+resource "anthropic_agent" "coordinator" {
+  model       = "claude-sonnet-4-6"
+  name        = "Support Coordinator"
+  description = "Delegates support inquiries to the support agent"
+
+  multiagent = {
+    type = "coordinator"
+    agents = [
+      {
+        type = "agent"
+        id   = anthropic_agent.assistant.id
+      },
+      {
+        type = "self"
+      },
+    ]
+  }
+}
+
 output "simple_agent_id" {
-  value = anthropic_agent.simple.id
+  description = "ID of the minimal agent."
+  value       = anthropic_agent.simple.id
+}
+
+output "simple_agent_model_effort" {
+  description = "Effort level of the minimal agent."
+  value       = anthropic_agent.simple.model_effort
 }
 
 output "developer_agent_version" {
-  value = anthropic_agent.developer.version
+  description = "Version number of the developer agent."
+  value       = anthropic_agent.developer.version
+}
+
+output "coordinator_roster_size" {
+  description = "Number of entries in the coordinator agent's roster."
+  value       = length(anthropic_agent.coordinator.multiagent.agents)
 }
 ```
 
@@ -166,9 +168,10 @@ output "developer_agent_version" {
 - `mcp_servers` (Attributes List) MCP servers this agent connects to. Maximum 20. Names must be unique. (see [below for nested schema](#nestedatt--mcp_servers))
 - `mcp_toolsets` (Attributes List) Tool configurations for MCP servers. Each entry corresponds to a server defined in `mcp_servers`. (see [below for nested schema](#nestedatt--mcp_toolsets))
 - `metadata` (Map of String) Arbitrary key-value metadata. Maximum 16 pairs, keys up to 64 chars, values up to 512 chars.
-- `model_effort` (String) How hard Claude works on each turn. Supported levels are `low`, `medium`, `high`, `xhigh`, and `max`; model compatibility is validated by the API.
+- `model_effort` (String) How hard Claude works on each turn: `low`, `medium`, `high`, `xhigh` or `max`. `xhigh` and `max` spend noticeably more tokens, so they are cost-relevant. When omitted on create, the API resolves a per-model default and it is stored here. Effort follows the model: changing `model` without setting `model_effort` resolves the new model's default (known after apply). With an unchanged `model`, removing the attribute from the configuration keeps the last value rather than resetting it to the default.
+- `model_inference_geo` (String) Geographic region that serves the agent's model requests (for example `us` or `global`). The value is not validated locally because the data residency documentation does not state that these are the only values. When unset, requests follow the workspace's default inference geo. Removing the attribute clears the pin on the next update.
 - `model_speed` (String) Inference speed mode. `fast` provides faster output at premium pricing. Not all models support `fast`.
-- `multiagent` (Attributes) Coordinator configuration listing the agents this agent can delegate to. (see [below for nested schema](#nestedatt--multiagent))
+- `multiagent` (Attributes) Coordinator topology (beta): the agent orchestrates work by spawning session threads, each running an agent from the roster. Entries must reference distinct agents, referenced agents must not have their own `multiagent` roster (depth limit 1), and `inference_geo` must match across the coordinator and all members. The roster is snapshotted on create/update: to pick up a newer version of a member, change its `version`. The API resolves a `self` entry into an `agent` reference carrying the coordinator's own ID and echoes the `advisor` entry last; state keeps the configured order and `self` entries as configured. When imported (no configuration to correlate with), a `self` entry is therefore read back as an `agent` entry whose `id` is the agent's own ID. (see [below for nested schema](#nestedatt--multiagent))
 - `skills` (Attributes List) Skills available to the agent. Maximum 20. (see [below for nested schema](#nestedatt--skills))
 - `system` (String) System prompt for the agent. Up to 100,000 characters.
 
@@ -257,20 +260,21 @@ Optional:
 
 Required:
 
-- `agents` (Attributes List) Agents the coordinator may delegate to. Use type `agent` with an `id`, or type `self` to allow copies of the coordinator. (see [below for nested schema](#nestedatt--multiagent--agents))
-- `type` (String) Multiagent topology type. Currently only `coordinator` is supported.
+- `agents` (Attributes List) Roster of agents the coordinator may spawn. 1-20 entries, at most one `self` and one `advisor`. (see [below for nested schema](#nestedatt--multiagent--agents))
+- `type` (String) Topology type. Only `coordinator` is supported.
 
 <a id="nestedatt--multiagent--agents"></a>
 ### Nested Schema for `multiagent.agents`
 
 Required:
 
-- `type` (String) Roster entry type: `agent` or `self`.
+- `type` (String) Entry type: `agent` (another agent), `self` (recursive self-invocation) or `advisor` (a model the coordinator may consult mid-turn).
 
 Optional:
 
-- `id` (String) Agent ID. Required when `type` is `agent` and omitted when `type` is `self`.
-- `version` (Number) Specific agent version. When omitted, the API pins and returns the latest version.
+- `id` (String) ID of the referenced agent. Required when `type` is `agent`, forbidden otherwise.
+- `model` (String) Advisor model ID. Required when `type` is `advisor`, forbidden otherwise.
+- `version` (Number) Pinned version of the referenced agent (`agent` entries only). The API pins the latest version when omitted and echoes it back.
 
 
 

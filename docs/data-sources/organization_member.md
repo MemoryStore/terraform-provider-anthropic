@@ -17,16 +17,6 @@ Fetches a single member (User) of the organization by user ID. Useful for resolv
 ## Example Usage
 
 ```hcl
-terraform {
-  required_version = "~> 1.0"
-  required_providers {
-    anthropic = {
-      source  = "registry.terraform.io/MemoryStore/anthropic"
-      version = "~> 1.0"
-    }
-  }
-}
-
 # When you already know the user ID, look it up directly:
 #
 #   data "anthropic_organization_member" "example" {
@@ -42,13 +32,15 @@ data "anthropic_organization_member" "example" {
 }
 
 output "member_email" {
+  description = "Email address of the member."
   # Marked sensitive so the address is redacted in plan/apply/test output (e.g. CI logs).
   value     = data.anthropic_organization_member.example.email
   sensitive = true
 }
 
 output "member_role" {
-  value = data.anthropic_organization_member.example.role
+  description = "Organization role of the member."
+  value       = data.anthropic_organization_member.example.role
 }
 ```
 

@@ -17,17 +17,6 @@ Creates and manages a custom Skill on the Anthropic platform (beta). Skills are 
 ## Example Usage
 
 ```hcl
-terraform {
-  required_version = "~> 1.0"
-
-  required_providers {
-    anthropic = {
-      source  = "registry.terraform.io/MemoryStore/anthropic"
-      version = "~> 1.0"
-    }
-  }
-}
-
 resource "anthropic_skill" "example" {
   display_title = "Example Skill"
   # Explicit patterns avoid sweeping the Terraform config itself into the
@@ -43,11 +32,13 @@ resource "anthropic_skill" "example" {
 }
 
 output "skill_id" {
-  value = anthropic_skill.example.id
+  description = "ID of the skill."
+  value       = anthropic_skill.example.id
 }
 
 output "skill_source" {
-  value = anthropic_skill.example.source
+  description = "Source of the skill."
+  value       = anthropic_skill.example.source
 }
 ```
 

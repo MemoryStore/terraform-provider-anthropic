@@ -11,7 +11,7 @@ You implement a single Terraform resource or data source in `terraform-provider-
 
 ## Setup
 
-`EnterWorktree <branch>`, then `set -a && source .env && set +a || true`.
+`EnterWorktree <branch>`. Environment variables come from the project's `.env` through mise (`[env] _.file` in `mise.toml`); never `source` or read the file yourself. A worktree has no `.env`, so credential-dependent commands are expected to be unavailable there.
 
 Read `agent_resource.go` (resource reference) or `model_data_source.go` (data source reference) before writing anything. Project conventions are in `CLAUDE.md`.
 
@@ -20,9 +20,9 @@ Read `agent_resource.go` (resource reference) or `model_data_source.go` (data so
 - `internal/provider/<name>_resource.go` (or `_data_source.go`) — implement the Resource/DataSource interface; for Configure use `providerrors.Require*` from `internal/errors/` — never an inline nil check; standard resources use `pd.Client`, admin resources use `pd.AdminClient`, and resources on endpoints that reject API keys (Workload Identity Federation) use `pd.OAuthClient` (see CLAUDE.md)
 - Register the factory in `internal/provider/provider.go`
 - `internal/provider/<name>_resource_test.go` — acceptance tests with `testAccProtoV6ProviderFactories`; include basic create, destroy verifier, and ImportState step
-- `examples/resources/<name>/resource.tf` — provider `registry.terraform.io/MemoryStore/anthropic`; at least one `output` block
+- `examples/resources/<name>/resource.tf` — only resource blocks and at least one `output` (this file is embedded verbatim in the Registry docs); put the `terraform {}` block (required_version `~> 1.6` for test fixtures / `~> 1.0` for examples, required_providers mapping to `registry.terraform.io/MemoryStore/anthropic`) in a sibling `versions.tf` (#231)
 - `templates/resources/<name>.md.tmpl` — **`subcategory` must never be empty** (e.g. `"Agents"`, `"Messages"`)
-- `tests/<name>.tftest.hcl` — `test { parallel = true }`; `source = "./examples/resources/<name>"`; assert `output.<name>_id != ""`
+- `tests/<name>.tftest.hcl` — `test { parallel = true }`; `source = "../examples/resources/<name>"` (relative to `tests/`, the root module) (the public example, never a fixture copy). Standard-API resources apply for real and assert `output.<name>_id != ""`. Admin/WIF resources: `command = plan` + a `provider "anthropic" { <dummy credential> }` block in the test file, asserting plan-known attributes on the module's resources. Self-contained list data sources: `mock_provider "anthropic" {}`. Only examples that chain `list[0].id` still get a `tests/fixtures/<name>_plan/` (#233)
 
 ## Validation
 

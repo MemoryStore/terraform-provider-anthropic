@@ -68,10 +68,22 @@
       "minimumReleaseAge": "3 days"
     },
     {
+      "description": "tflint is installed from a pinned release zip whose sha256 is hardcoded next to the version (security.yml); Renovate can bump the version but not the hash, so its PR always fails the tflint job until TFLINT_SHA256 is updated by hand. Never automerge it (#241 was merged with the job red).",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["terraform-linters/tflint"],
+      "automerge": false
+    },
+    {
       "description": "Hold anthropic-sdk-go below v1.68.0 until #192 is done: v1.68.0 renames skill fields the deployed API still returns under their old names. Patch releases within 1.67.x stay allowed. Remove this rule as part of #192, not on its own.",
       "matchManagers": ["gomod"],
       "matchDepNames": ["github.com/anthropics/anthropic-sdk-go"],
       "allowedVersions": "<1.68.0"
+    },
+    {
+      "description": "Hold conventional-changelog-conventionalcommits below 9: 10.x needs conventional-changelog-writer@9, but the latest stable @semantic-release/release-notes-generator (14.1.1) pins writer ^8, so generateNotes fails with 'Missing helper'. Lift once release-notes-generator 15 ships with writer 9.",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["conventional-changelog-conventionalcommits"],
+      "allowedVersions": "<9.0.0"
     }
   ]
 }

@@ -1,13 +1,3 @@
-terraform {
-  required_version = "~> 1.0"
-  required_providers {
-    anthropic = {
-      source  = "registry.terraform.io/MemoryStore/anthropic"
-      version = "~> 1.0"
-    }
-  }
-}
-
 # Create a workspace to read with the data source
 resource "anthropic_workspace" "created" {
   name = "workspace-data-source-example"
@@ -19,13 +9,26 @@ data "anthropic_workspace" "example" {
 }
 
 output "workspace_name" {
-  value = data.anthropic_workspace.example.name
+  description = "Name of the workspace."
+  value       = data.anthropic_workspace.example.name
 }
 
 output "created_at" {
-  value = data.anthropic_workspace.example.created_at
+  description = "Creation timestamp of the workspace (RFC 3339)."
+  value       = data.anthropic_workspace.example.created_at
 }
 
 output "display_color" {
-  value = data.anthropic_workspace.example.display_color
+  description = "Display color of the workspace in the Console."
+  value       = data.anthropic_workspace.example.display_color
+}
+
+output "tags" {
+  description = "User-defined tags of the workspace."
+  value       = data.anthropic_workspace.example.tags
+}
+
+output "compartment_id" {
+  description = "Encryption compartment ID of the workspace."
+  value       = data.anthropic_workspace.example.compartment_id
 }

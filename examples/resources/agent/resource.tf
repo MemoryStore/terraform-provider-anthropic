@@ -1,40 +1,9 @@
-terraform {
-  required_version = ">= 1.0"
-
-  required_providers {
-    anthropic = {
-      source  = "registry.terraform.io/MemoryStore/anthropic"
-      version = "~> 0.1.0"
-    }
-  }
-}
-
-# Minimal agent
+# Minimal agent. model_effort is optional: when omitted, the API resolves a
+# per-model default and stores it in state.
 resource "anthropic_agent" "simple" {
   model        = "claude-sonnet-4-6"
-  model_effort = "high"
   name         = "Simple Agent"
-}
-
-# Coordinator agent that can delegate to another managed agent
-resource "anthropic_agent" "coordinator" {
-  model        = "claude-sonnet-4-6"
   model_effort = "high"
-  name         = "Support Coordinator"
-
-  multiagent = {
-    type = "coordinator"
-    agents = [
-      {
-        type = "self"
-      },
-      {
-        type    = "agent"
-        id      = anthropic_agent.assistant.id
-        version = anthropic_agent.assistant.version
-      }
-    ]
-  }
 }
 
 # Agent with system prompt and description
@@ -122,10 +91,43 @@ resource "anthropic_agent" "custom_tools" {
   ]
 }
 
+# Coordinator agent that can delegate to another agent and to itself.
+# The members must not have their own multiagent roster (depth limit 1).
+resource "anthropic_agent" "coordinator" {
+  model       = "claude-sonnet-4-6"
+  name        = "Support Coordinator"
+  description = "Delegates support inquiries to the support agent"
+
+  multiagent = {
+    type = "coordinator"
+    agents = [
+      {
+        type = "agent"
+        id   = anthropic_agent.assistant.id
+      },
+      {
+        type = "self"
+      },
+    ]
+  }
+}
+
 output "simple_agent_id" {
-  value = anthropic_agent.simple.id
+  description = "ID of the minimal agent."
+  value       = anthropic_agent.simple.id
+}
+
+output "simple_agent_model_effort" {
+  description = "Effort level of the minimal agent."
+  value       = anthropic_agent.simple.model_effort
 }
 
 output "developer_agent_version" {
-  value = anthropic_agent.developer.version
+  description = "Version number of the developer agent."
+  value       = anthropic_agent.developer.version
+}
+
+output "coordinator_roster_size" {
+  description = "Number of entries in the coordinator agent's roster."
+  value       = length(anthropic_agent.coordinator.multiagent.agents)
 }

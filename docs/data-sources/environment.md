@@ -17,16 +17,6 @@ Fetches a single Anthropic cloud environment by ID (beta).
 ## Example Usage
 
 ```hcl
-terraform {
-  required_version = "~> 1.0"
-  required_providers {
-    anthropic = {
-      source  = "registry.terraform.io/MemoryStore/anthropic"
-      version = "~> 1.0"
-    }
-  }
-}
-
 # Create an environment to read with the data source
 resource "anthropic_environment" "created" {
   name = "environment-data-source-example"
@@ -38,15 +28,18 @@ data "anthropic_environment" "example" {
 }
 
 output "environment_id" {
-  value = data.anthropic_environment.example.id
+  description = "ID of the environment."
+  value       = data.anthropic_environment.example.id
 }
 
 output "environment_name" {
-  value = data.anthropic_environment.example.name
+  description = "Name of the environment."
+  value       = data.anthropic_environment.example.name
 }
 
 output "environment_type" {
-  value = data.anthropic_environment.example.type
+  description = "Type of the environment."
+  value       = data.anthropic_environment.example.type
 }
 ```
 

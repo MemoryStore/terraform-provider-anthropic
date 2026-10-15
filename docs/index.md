@@ -74,13 +74,42 @@ provider "anthropic" {
 }
 ```
 
-~> **Warning**: These tokens are short-lived. A long `terraform apply` can outlive the token and start failing with `401`. Mint a fresh token immediately before the run; the provider does not refresh it.
+~> **Warning**: These tokens are short-lived. A long `terraform apply` can outlive the token and start failing with `401`. Mint a fresh token immediately before the run; the provider cannot refresh a token it was handed. Use the `federation` block below when it needs to.
 
 The `auth_token` is optional — you only need it for federation resources.
 
-~> **Note**: The provider needs a token it can read at plan time; it does not perform the Workload Identity Federation token exchange itself. The SDK's federation variables (`ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`, `ANTHROPIC_IDENTITY_TOKEN_FILE`) are **not** a way to configure the provider: with no `auth_token` and no `ANTHROPIC_AUTH_TOKEN`, configuration fails with `Missing Credentials`. In CI, exchange the identity token in a preceding step — the [`ant` CLI with a federation profile, or the jwt-bearer grant directly](https://platform.claude.com/docs/en/manage-claude/wif-admin-api#bootstrap-a-workload-to-manage-wif) — and export the resulting bearer token.
+For the end-to-end setup (the one Console-only bootstrap rule, a complete GitHub Actions example, how the workload consumes the rule, importing wizard-created objects), see the [Workload Identity Federation guide](guides/workload_identity_federation).
 
-Profiles under `~/.config/anthropic` are ignored for the same reason: each client is built from the credential resolved above and nothing else, so a profile left active by `ant auth login` can never redirect a request to another base URL or scope it to another workspace behind your back.
+### Workload Identity Federation (`federation`)
+
+Instead of `auth_token`, the provider can obtain the `org:admin` bearer token itself, by exchanging an identity token from your platform through a federation rule whose OAuth scope is `org:admin`. It exchanges again shortly before the access token expires, fetching a fresh identity token each time, so long applies keep working and an identity token is never presented twice: the exchange accepts an assertion carrying a `jti` claim, as GitHub Actions tokens do, [only once per issuer](https://platform.claude.com/docs/en/manage-claude/wif-reference#jwt-verification).
+
+```hcl
+provider "anthropic" {
+  federation = {
+    organization_id    = "00000000-0000-0000-0000-000000000000"
+    federation_rule_id = "fdrl_..."
+    service_account_id = "svac_..."
+
+    # One identity token source:
+    identity_token_file = "/var/run/secrets/anthropic.com/token"
+    # identity_token_command = ["az", "account", "get-access-token", "--resource", "<app-client-id>", "--query", "accessToken", "-o", "tsv"]
+    # identity_token = "eyJ..."
+  }
+}
+```
+
+- `identity_token_file` is re-read on every exchange, for tokens a platform rotates on disk. The platform must have rotated the file by the next exchange: if it still holds a token with a `jti` the exchange has already accepted, that exchange fails with `jti_reused`.
+- `identity_token_command` runs a program on every exchange and reads the token from its stdout. Use it for tokens fetched from a CLI or an endpoint. The program is run directly, not through a shell, so a pipe or `$VARIABLE` expansion needs the shell as the program: `["sh", "-c", "..."]`.
+- `identity_token` is a literal and cannot be refreshed.
+
+The command is stopped after 30 seconds. Its stderr is not shown in the error, since a failing CLI may echo the token there (`curl -v`, `az --debug`, `set -x`); it is logged at `TF_LOG=DEBUG`.
+
+Give the rule a `token_lifetime_seconds` well above 120 (the default, 3600, is fine). The SDK refreshes within the last 120 seconds of an access token's life, so with a shorter lifetime every request refreshes, and runs the identity source, which can hit the identity provider's rate limit on a large plan.
+
+Every attribute falls back to the environment variable the Anthropic SDKs read for their own federation (`ANTHROPIC_ORGANIZATION_ID`, `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_SERVICE_ACCOUNT_ID`, `ANTHROPIC_WORKSPACE_ID`, `ANTHROPIC_IDENTITY_TOKEN_FILE`, `ANTHROPIC_IDENTITY_TOKEN`), so `federation = {}` with those exported is enough. The variables alone do nothing without the block: other tools in the same job often export them, and they must not change the provider's credential behind your back. `federation` conflicts with `auth_token`. An exported `ANTHROPIC_AUTH_TOKEN` is ignored, with a warning: the block wins, as configuration does over the environment everywhere else in the provider, although the Anthropic SDKs rank the variable above their own federation.
+
+Profiles under `~/.config/anthropic` are ignored: each client is built from the credential resolved above and nothing else, so a profile left active by `ant auth login` can never redirect a request to another base URL or scope it to another workspace behind your back.
 
 ~> **Warning**: Never hardcode API keys in your Terraform configuration files.
 Use environment variables or a secrets manager instead.
@@ -131,3 +160,17 @@ provider "anthropic" {}
 - `admin_api_key` (String, Sensitive) The Anthropic Admin API key for organization management endpoints (workspaces, members). Can also be set via the ANTHROPIC_ADMIN_API_KEY environment variable.
 - `api_key` (String, Sensitive) The Anthropic API key. Can also be set via the ANTHROPIC_API_KEY environment variable.
 - `auth_token` (String, Sensitive) An org:admin OAuth bearer token (`sk-ant-oat01-...`) for endpoints that reject API keys, such as the Workload Identity Federation admin endpoints. Can also be set via the ANTHROPIC_AUTH_TOKEN environment variable.
+- `federation` (Attributes) Obtain the org:admin OAuth bearer token through Workload Identity Federation instead of `auth_token`. The provider exchanges an identity token from your platform (a CI OIDC token, a Kubernetes projected service account token, an Entra token...) for an Anthropic access token, and exchanges again before it expires, fetching a fresh identity token each time. Every attribute falls back to the environment variable the Anthropic SDKs read. Conflicts with `auth_token`; an exported ANTHROPIC_AUTH_TOKEN is ignored, with a warning. Give the federation rule a `token_lifetime_seconds` well above 120: the SDK refreshes within the last 120 seconds of a token's life, so a shorter lifetime refreshes, and fetches an identity token, on nearly every request. (see [below for nested schema](#nestedatt--federation))
+
+<a id="nestedatt--federation"></a>
+### Nested Schema for `federation`
+
+Optional:
+
+- `federation_rule_id` (String) Federation rule (`fdrl_...`) to exchange against. Can also be set via the ANTHROPIC_FEDERATION_RULE_ID environment variable.
+- `identity_token` (String, Sensitive) A literal identity token (JWT). It cannot be refreshed, so applies that outlive it fail; prefer `identity_token_file` or `identity_token_command`. Can also be set via the ANTHROPIC_IDENTITY_TOKEN environment variable.
+- `identity_token_command` (List of String) Command (program and arguments) that prints an identity token on stdout. The program is run directly, not through a shell: for a pipe or `$VARIABLE` expansion, make the shell the program (`["sh", "-c", "..."]`). It runs on every exchange, so short-lived tokens, and tokens with a `jti` claim that the exchange accepts only once, are fetched fresh each time. It is stopped after 30 seconds. Its stderr is not shown in diagnostics, since a failing CLI may echo the token there; it is logged at TF_LOG=DEBUG.
+- `identity_token_file` (String) Path to a file holding the identity token, re-read on every exchange so a rotating file (such as a Kubernetes projected token) stays current. The file must have been rotated by the next exchange if its token carries a `jti`, which the exchange accepts only once. Can also be set via the ANTHROPIC_IDENTITY_TOKEN_FILE environment variable.
+- `organization_id` (String) UUID of the Anthropic organization. Can also be set via the ANTHROPIC_ORGANIZATION_ID environment variable.
+- `service_account_id` (String) Service account (`svac_...`) the rule targets; the exchange fails if the rule targets another. Can also be set via the ANTHROPIC_SERVICE_ACCOUNT_ID environment variable.
+- `workspace_id` (String) Workspace (`wrkspc_...`) to scope the token to at exchange time. Required only when the rule is enabled for more than one workspace. Can also be set via the ANTHROPIC_WORKSPACE_ID environment variable, which the SDKs' own federation reads the same way.

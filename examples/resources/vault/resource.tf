@@ -1,13 +1,3 @@
-terraform {
-  required_version = "~> 1.0"
-  required_providers {
-    anthropic = {
-      source  = "registry.terraform.io/MemoryStore/anthropic"
-      version = "~> 1.0"
-    }
-  }
-}
-
 # Minimal vault
 resource "anthropic_vault" "minimal" {
   display_name = "my-vault"
@@ -30,9 +20,11 @@ resource "anthropic_vault" "preserved" {
 }
 
 output "vault_id" {
-  value = anthropic_vault.minimal.id
+  description = "ID of the vault."
+  value       = anthropic_vault.minimal.id
 }
 
 output "vault_created_at" {
-  value = anthropic_vault.minimal.created_at
+  description = "Creation timestamp of the vault (RFC 3339)."
+  value       = anthropic_vault.minimal.created_at
 }

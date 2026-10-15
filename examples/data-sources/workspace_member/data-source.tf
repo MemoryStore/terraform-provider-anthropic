@@ -1,14 +1,3 @@
-terraform {
-  required_version = ">= 1.0"
-
-  required_providers {
-    anthropic = {
-      source  = "registry.terraform.io/MemoryStore/anthropic"
-      version = "~> 1.0"
-    }
-  }
-}
-
 # Create a workspace to look up members from.
 resource "anthropic_workspace" "created" {
   name = "workspace-member-data-source-example"
@@ -26,5 +15,6 @@ data "anthropic_workspace_member" "example" {
 }
 
 output "workspace_role" {
-  value = data.anthropic_workspace_member.example.workspace_role
+  description = "Role of the member in the workspace."
+  value       = data.anthropic_workspace_member.example.workspace_role
 }
