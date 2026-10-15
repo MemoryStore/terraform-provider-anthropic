@@ -28,6 +28,7 @@ import (
 // Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &SkillVersionResource{}
 var _ resource.ResourceWithImportState = &SkillVersionResource{}
+var _ resource.ResourceWithModifyPlan = &SkillVersionResource{}
 
 func NewSkillVersionResource() resource.Resource {
 	return &SkillVersionResource{}
@@ -42,6 +43,7 @@ type SkillVersionResource struct {
 type SkillVersionResourceModel struct {
 	ID          types.String `tfsdk:"id"`
 	SkillID     types.String `tfsdk:"skill_id"`
+	FileHashes  types.Map    `tfsdk:"file_hashes"`
 	Files       types.List   `tfsdk:"files"`
 	Version     types.String `tfsdk:"version"`
 	Name        types.String `tfsdk:"name"`
@@ -73,8 +75,18 @@ func (r *SkillVersionResource) Schema(_ context.Context, _ resource.SchemaReques
 				Required:            true,
 				ElementType:         types.StringType,
 				MarkdownDescription: "Local file paths to upload for the skill version. Must include a `SKILL.md` file at the root of the directory.",
-				PlanModifiers:       []planmodifier.List{listplanmodifier.RequiresReplace()},
-				Validators:          []validator.List{listvalidator.SizeAtLeast(1)},
+				PlanModifiers: []planmodifier.List{listplanmodifier.RequiresReplaceIf(
+					func(_ context.Context, req planmodifier.ListRequest, resp *listplanmodifier.RequiresReplaceIfFuncResponse) {
+						// Import has no local file paths. Attaching a bundle for
+						// the initial hash baseline must not replace the version.
+						resp.RequiresReplace = !req.StateValue.IsNull()
+					}, "Replace when an existing file list changes.", "Replace when an existing file list changes.")},
+				Validators: []validator.List{listvalidator.SizeAtLeast(1)},
+			},
+			"file_hashes": schema.MapAttribute{
+				Computed:            true,
+				ElementType:         types.StringType,
+				MarkdownDescription: "SHA-256 file content hashes, keyed by path relative to the bundle root. Files must be available during planning and applying.",
 			},
 			"version": schema.StringAttribute{
 				Computed:            true,
@@ -133,6 +145,13 @@ func (r *SkillVersionResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
+	hashes, diags := verifySkillFiles(ctx, data.Files, data.FileHashes)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.FileHashes = hashes
+
 	var filePaths []string
 	resp.Diagnostics.Append(data.Files.ElementsAs(ctx, &filePaths, false)...)
 	if resp.Diagnostics.HasError() {
@@ -186,8 +205,21 @@ func (r *SkillVersionResource) Read(ctx context.Context, req resource.ReadReques
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// Update is a no-op because all attributes are ForceNew.
-func (r *SkillVersionResource) Update(_ context.Context, _ resource.UpdateRequest, _ *resource.UpdateResponse) {
+// Update adopts the initial hash baseline. Subsequent content changes replace
+// this immutable resource in ModifyPlan.
+func (r *SkillVersionResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan SkillVersionResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	hashes, diags := verifySkillFiles(ctx, plan.Files, plan.FileHashes)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.FileHashes = hashes
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *SkillVersionResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -233,7 +265,7 @@ func mapSkillVersionNewResponseToState(sv *anthropic.BetaSkillVersionNewResponse
 	data.Description = types.StringValue(sv.Description)
 	data.Directory = types.StringValue(sv.Directory)
 	data.CreatedAt = types.StringValue(sv.CreatedAt)
-	// Do NOT update Files — the API does not return file paths (they are ForceNew).
+	// Do NOT update Files — the API does not return file paths.
 }
 
 func mapSkillVersionGetResponseToState(sv *anthropic.BetaSkillVersionGetResponse, data *SkillVersionResourceModel) {
@@ -244,5 +276,5 @@ func mapSkillVersionGetResponseToState(sv *anthropic.BetaSkillVersionGetResponse
 	data.Description = types.StringValue(sv.Description)
 	data.Directory = types.StringValue(sv.Directory)
 	data.CreatedAt = types.StringValue(sv.CreatedAt)
-	// Do NOT update Files — the API does not return file paths (they are ForceNew).
+	// Do NOT update Files — the API does not return file paths.
 }
