@@ -245,6 +245,100 @@ func TestSkillUpdatePublishesOnlyContentChanges(t *testing.T) {
 	}
 }
 
+func TestSkillTitleReplaceUnknownsComputed(t *testing.T) {
+	ctx := context.Background()
+	files := bundleFiles(t, t.TempDir())
+	hashes, diags := hashSkillFiles(ctx, files)
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	r := &SkillResource{}
+	state := skillState(t, r, files, hashes)
+	for name, value := range map[string]attr.Value{
+		"display_title":  types.StringValue("old"),
+		"latest_version": types.StringValue("v1"),
+		"updated_at":     types.StringValue("t1"),
+		"created_at":     types.StringValue("c1"),
+		"source":         types.StringValue("custom"),
+	} {
+		if d := state.SetAttribute(ctx, path.Root(name), value); d.HasError() {
+			t.Fatal(d)
+		}
+	}
+	plan := tfsdk.Plan(state)
+	if d := plan.SetAttribute(ctx, path.Root("display_title"), types.StringValue("new")); d.HasError() {
+		t.Fatal(d)
+	}
+	response := resource.ModifyPlanResponse{Plan: plan}
+	r.ModifyPlan(ctx, resource.ModifyPlanRequest{Plan: plan, State: state}, &response)
+	if response.Diagnostics.HasError() {
+		t.Fatal(response.Diagnostics)
+	}
+	for _, name := range []string{"id", "created_at", "source", "latest_version", "updated_at"} {
+		var output types.String
+		if d := response.Plan.GetAttribute(ctx, path.Root(name), &output); d.HasError() || !output.IsUnknown() {
+			t.Fatalf("title replace left %s known: %v %v", name, output, d)
+		}
+	}
+}
+
+func TestSkillVersionReplaceUnknownsComputed(t *testing.T) {
+	ctx := context.Background()
+	files := bundleFiles(t, t.TempDir())
+	hashes, diags := hashSkillFiles(ctx, files)
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	elements := files.Elements()
+	reordered, d := types.ListValue(types.StringType, []attr.Value{elements[1], elements[0]})
+	if d.HasError() {
+		t.Fatal(d)
+	}
+	r := &SkillVersionResource{}
+	for _, tc := range []struct {
+		name  string
+		files types.List
+		skill string
+	}{
+		{"reordered paths", reordered, "skill_a"},
+		{"skill id", files, "skill_b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := skillState(t, r, files, hashes)
+			for name, value := range map[string]attr.Value{
+				"skill_id":    types.StringValue("skill_a"),
+				"version":     types.StringValue("1"),
+				"name":        types.StringValue("old"),
+				"description": types.StringValue("old"),
+				"directory":   types.StringValue("old"),
+				"created_at":  types.StringValue("c1"),
+			} {
+				if d := state.SetAttribute(ctx, path.Root(name), value); d.HasError() {
+					t.Fatal(d)
+				}
+			}
+			plan := tfsdk.Plan(state)
+			if d := plan.SetAttribute(ctx, path.Root("files"), tc.files); d.HasError() {
+				t.Fatal(d)
+			}
+			if d := plan.SetAttribute(ctx, path.Root("skill_id"), types.StringValue(tc.skill)); d.HasError() {
+				t.Fatal(d)
+			}
+			response := resource.ModifyPlanResponse{Plan: plan}
+			r.ModifyPlan(ctx, resource.ModifyPlanRequest{Plan: plan, State: state}, &response)
+			if response.Diagnostics.HasError() || len(response.RequiresReplace) != 0 {
+				t.Fatalf("hash-stable replace: %v %v", response.Diagnostics, response.RequiresReplace)
+			}
+			for _, name := range []string{"id", "version", "name", "description", "directory", "created_at"} {
+				var output types.String
+				if d := response.Plan.GetAttribute(ctx, path.Root(name), &output); d.HasError() || !output.IsUnknown() {
+					t.Fatalf("%s left known: %v %v", name, output, d)
+				}
+			}
+		})
+	}
+}
+
 func TestSkillSavedPlanRejectsChangedFiles(t *testing.T) {
 	ctx := context.Background()
 	for _, r := range []resource.Resource{&SkillResource{}, &SkillVersionResource{}} {

@@ -615,9 +615,6 @@ func (r *AgentResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if len(metaPatch) > 0 {
-		params.SetExtraFields(map[string]any{"metadata": metaPatch})
-	}
 
 	// MCP servers
 	if !data.MCPServers.IsNull() {
@@ -671,8 +668,17 @@ func (r *AgentResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 	params.Multiagent = multiagent
+	// SetExtraFields replaces the whole map, so metadata and a roster clear
+	// have to go out in one call.
+	extra := map[string]any{}
+	if len(metaPatch) > 0 {
+		extra["metadata"] = metaPatch
+	}
 	if data.Multiagent.IsNull() && !state.Multiagent.IsNull() {
-		params.SetExtraFields(multiagentClearField())
+		extra["multiagent"] = nil
+	}
+	if len(extra) > 0 {
+		params.SetExtraFields(extra)
 	}
 
 	agent, err := r.client.Beta.Agents.Update(ctx, state.ID.ValueString(), params)

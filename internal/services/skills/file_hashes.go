@@ -113,7 +113,10 @@ func (r *SkillResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanR
 	}
 	// Pure adoption and local path relocation do not write to the API. Keep the
 	// API's computed values known so the state-only update can converge.
-	if !hashes.IsUnknown() && !skillNeedsUpload(plan.Files, state.Files, hashes, state.FileHashes) {
+	// A display_title change replaces the skill, so those values belong to a
+	// different object and must not be copied forward.
+	replacing := !plan.DisplayTitle.Equal(state.DisplayTitle)
+	if !replacing && !hashes.IsUnknown() && !skillNeedsUpload(plan.Files, state.Files, hashes, state.FileHashes) {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("latest_version"), state.LatestVersion)...)
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("updated_at"), state.UpdatedAt)...)
 	} else {
@@ -121,6 +124,11 @@ func (r *SkillResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanR
 		// marking, so explicitly invalidate outputs changed by the version write.
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("latest_version"), types.StringUnknown())...)
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("updated_at"), types.StringUnknown())...)
+	}
+	if replacing {
+		for _, name := range []string{"id", "created_at", "source"} {
+			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root(name), types.StringUnknown())...)
+		}
 	}
 }
 
@@ -154,8 +162,15 @@ func (r *SkillVersionResource) ModifyPlan(ctx context.Context, req resource.Modi
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if !hashes.IsUnknown() && !state.FileHashes.IsNull() && !state.FileHashes.IsUnknown() && !hashes.Equal(state.FileHashes) {
+	filesChanged := !state.Files.IsNull() && !state.Files.IsUnknown() && !plan.Files.IsUnknown() && !plan.Files.Equal(state.Files)
+	skillChanged := !state.SkillID.IsNull() && !state.SkillID.IsUnknown() && !plan.SkillID.Equal(state.SkillID)
+	hashesChanged := !hashes.IsUnknown() && !state.FileHashes.IsNull() && !state.FileHashes.IsUnknown() && !hashes.Equal(state.FileHashes)
+	if hashesChanged {
 		resp.RequiresReplace = append(resp.RequiresReplace, path.Root("file_hashes"))
+	}
+	// files and skill_id already require replace from the schema. UseStateForUnknown
+	// has copied the previous version's outputs, which a new version will not match.
+	if filesChanged || skillChanged || hashesChanged {
 		for _, name := range []string{"id", "version", "name", "description", "directory", "created_at"} {
 			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root(name), types.StringUnknown())...)
 		}

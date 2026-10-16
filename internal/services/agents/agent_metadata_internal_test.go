@@ -83,3 +83,57 @@ func TestAgentMetadataUpdate(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentUpdateKeepsMetadataWhenClearingMultiagent(t *testing.T) {
+	ctx := context.Background()
+	metadata, d := types.MapValueFrom(ctx, types.StringType, map[string]string{"a": "1"})
+	if d.HasError() {
+		t.Fatal(d)
+	}
+	priorMetadata, d := types.MapValueFrom(ctx, types.StringType, map[string]string{"a": "1", "b": "2"})
+	if d.HasError() {
+		t.Fatal(d)
+	}
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		called = true
+		var body map[string]any
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(body["metadata"], map[string]any{"a": "1", "b": nil}) {
+			t.Errorf("metadata=%#v", body["metadata"])
+		}
+		if _, ok := body["multiagent"]; !ok || body["multiagent"] != nil {
+			t.Errorf("multiagent=%#v", body["multiagent"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"object_test","name":"test","model":{"id":"claude-sonnet-4-6"},"version":2,"metadata":{"a":"1"},"created_at":"2026-10-15T00:00:00Z","updated_at":"2026-10-15T00:00:00Z"}`))
+	}))
+	defer server.Close()
+	r := &AgentResource{client: oauthtest.NewSDKClient(t, server, option.WithMaxRetries(0))}
+	state := schematest.NullState(t, r)
+	roster := multiagentObj(t, multiagentEntryObj(t, "self", types.StringNull(), types.Int64Null(), types.StringNull()))
+	for name, v := range map[string]attr.Value{
+		"id":         types.StringValue("object_test"),
+		"name":       types.StringValue("test"),
+		"metadata":   priorMetadata,
+		"multiagent": roster,
+	} {
+		if d := state.SetAttribute(ctx, path.Root(name), v); d.HasError() {
+			t.Fatal(d)
+		}
+	}
+	plan := tfsdk.Plan(state)
+	if d := plan.SetAttribute(ctx, path.Root("metadata"), metadata); d.HasError() {
+		t.Fatal(d)
+	}
+	if d := plan.SetAttribute(ctx, path.Root("multiagent"), types.ObjectNull(agentMultiagentAttrTypes)); d.HasError() {
+		t.Fatal(d)
+	}
+	response := resource.UpdateResponse{State: state}
+	r.Update(ctx, resource.UpdateRequest{Plan: plan, State: state}, &response)
+	if response.Diagnostics.HasError() || !called {
+		t.Fatalf("update failed: %v", response.Diagnostics)
+	}
+}
