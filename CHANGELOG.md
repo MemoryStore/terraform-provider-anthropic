@@ -1,3 +1,9 @@
+## [1.33.0](https://github.com/MemoryStore/terraform-provider-anthropic/compare/v1.32.0...v1.33.0) (2026-10-16)
+
+### ✨ Features
+
+* track skill contents, fix metadata removal, and pin organizations ([f84c5be](https://github.com/MemoryStore/terraform-provider-anthropic/commit/f84c5be7f8f606f7d53dfd778678be47f292c649))
+
 ## [1.61.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.60.0...v1.61.0) (2026-10-13)
 
 ### ✨ Features
