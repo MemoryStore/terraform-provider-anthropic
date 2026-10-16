@@ -56,6 +56,10 @@ func newFederationServer(t *testing.T, expiresIn int) *federationServer {
 			return
 		}
 		fs.authorized = append(fs.authorized, r.Header.Get("Authorization"))
+		if r.URL.Path == "/v1/organizations/me" {
+			_, _ = w.Write([]byte(`{"id":"00000000-0000-0000-0000-000000000000"}`))
+			return
+		}
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	t.Cleanup(fs.Close)

@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	providerrors "github.com/ippontech/terraform-provider-anthropic/internal/errors"
+	"github.com/ippontech/terraform-provider-anthropic/internal/metadata"
 	providerdata "github.com/ippontech/terraform-provider-anthropic/internal/providerdata"
 )
 
@@ -609,16 +610,10 @@ func (r *AgentResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		params.System = param.NewOpt("")
 	}
 
-	// Metadata
-	if !data.Metadata.IsNull() {
-		var meta map[string]string
-		resp.Diagnostics.Append(data.Metadata.ElementsAs(ctx, &meta, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		params.Metadata = meta
-	} else {
-		params.Metadata = map[string]string{}
+	metaPatch, diags := metadata.BuildPatch(ctx, data.Metadata, state.Metadata)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	// MCP servers
@@ -673,8 +668,17 @@ func (r *AgentResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 	params.Multiagent = multiagent
+	// SetExtraFields replaces the whole map, so metadata and a roster clear
+	// have to go out in one call.
+	extra := map[string]any{}
+	if len(metaPatch) > 0 {
+		extra["metadata"] = metaPatch
+	}
 	if data.Multiagent.IsNull() && !state.Multiagent.IsNull() {
-		params.SetExtraFields(multiagentClearField())
+		extra["multiagent"] = nil
+	}
+	if len(extra) > 0 {
+		params.SetExtraFields(extra)
 	}
 
 	agent, err := r.client.Beta.Agents.Update(ctx, state.ID.ValueString(), params)
@@ -1081,7 +1085,11 @@ func mapAgentResponseToState(ctx context.Context, agent *anthropic.BetaManagedAg
 		diags.Append(d...)
 		data.Metadata = metaMap
 	} else if !data.Metadata.IsNull() {
-		data.Metadata = types.MapNull(types.StringType)
+		if !data.Metadata.IsUnknown() && len(data.Metadata.Elements()) == 0 {
+			data.Metadata = types.MapValueMust(types.StringType, map[string]attr.Value{})
+		} else {
+			data.Metadata = types.MapNull(types.StringType)
+		}
 	}
 
 	// MCP servers

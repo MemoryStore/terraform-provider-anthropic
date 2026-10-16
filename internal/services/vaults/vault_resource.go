@@ -23,6 +23,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	providerrors "github.com/ippontech/terraform-provider-anthropic/internal/errors"
+	"github.com/ippontech/terraform-provider-anthropic/internal/metadata"
 	providerdata "github.com/ippontech/terraform-provider-anthropic/internal/providerdata"
 )
 
@@ -310,7 +311,7 @@ func (r *VaultResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	// metadata uses PATCH semantics (omitted keys preserved, null deletes a key).
 	// Build a patch that upserts planned keys and explicitly nulls keys removed
 	// since the prior state, so a cleared/removed key actually converges.
-	metaPatch, d := buildMetadataPatch(ctx, data.Metadata, state.Metadata)
+	metaPatch, d := metadata.BuildPatch(ctx, data.Metadata, state.Metadata)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -400,41 +401,4 @@ func mapVaultResponseToState(vault *anthropic.BetaManagedAgentsVault, data *Vaul
 	}
 
 	return diags
-}
-
-// buildMetadataPatch computes a PATCH body for the metadata field shared by
-// vaults and vault credentials. The API preserves omitted keys and deletes keys
-// whose value is null, so to converge declarative config with server state the
-// patch upserts every planned key and explicitly sets keys removed since the
-// prior state to null. Returns a map[string]any (values are string for upserts,
-// nil for deletes) suitable for SetExtraFields; an empty map means "no change".
-func buildMetadataPatch(ctx context.Context, plan, state types.Map) (map[string]any, diag.Diagnostics) {
-	var diags diag.Diagnostics
-	patch := map[string]any{}
-
-	if !plan.IsNull() && !plan.IsUnknown() {
-		var pm map[string]string
-		diags.Append(plan.ElementsAs(ctx, &pm, false)...)
-		if diags.HasError() {
-			return nil, diags
-		}
-		for k, v := range pm {
-			patch[k] = v
-		}
-	}
-
-	if !state.IsNull() && !state.IsUnknown() {
-		var sm map[string]string
-		diags.Append(state.ElementsAs(ctx, &sm, false)...)
-		if diags.HasError() {
-			return nil, diags
-		}
-		for k := range sm {
-			if _, ok := patch[k]; !ok {
-				patch[k] = nil
-			}
-		}
-	}
-
-	return patch, diags
 }

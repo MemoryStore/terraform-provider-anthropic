@@ -9,6 +9,32 @@ description: |-
 The Anthropic provider is used to interact with [Anthropic](https://anthropic.com) APIs.
 It allows you to manage and query Anthropic resources such as models.
 
+## Organization pinning
+
+Set `organization_id` in the provider block, or export `ANTHROPIC_ORGANIZATION_ID`,
+to require every configured credential to belong to the expected organization:
+
+```hcl
+provider "anthropic" {
+  organization_id = "00000000-0000-0000-0000-000000000000"
+}
+```
+
+The provider calls `GET /v1/organizations/me` once for each configured standard API
+key, admin API key, and OAuth token (including a token obtained through federation)
+during configuration. A mismatch or failed identity lookup stops the plan or apply
+before resource operations. Credentials are checked independently, so mixed-organization
+keys cannot pass merely because one key matches.
+
+Without a resolved organization ID there are no extra identity requests. To bypass
+checks explicitly, set `skip_organization_check = true`; this produces no recurring
+warning. The provider argument takes precedence over the environment variable; an
+unknown argument follows the existing credential fallback behavior.
+
+`ANTHROPIC_ORGANIZATION_ID` also fills `federation.organization_id` when federation
+is configured. The top-level pin checks the organization targeted by the resulting
+credential; it does not enable federation or replace its configuration.
+
 ## Authentication
 
 The provider accepts three distinct credentials, depending on which resources you manage. At least one must be configured; they are independent, and configuring one never substitutes for another.
@@ -161,6 +187,8 @@ provider "anthropic" {}
 - `api_key` (String, Sensitive) The Anthropic API key. Can also be set via the ANTHROPIC_API_KEY environment variable.
 - `auth_token` (String, Sensitive) An org:admin OAuth bearer token (`sk-ant-oat01-...`) for endpoints that reject API keys, such as the Workload Identity Federation admin endpoints. Can also be set via the ANTHROPIC_AUTH_TOKEN environment variable.
 - `federation` (Attributes) Obtain the org:admin OAuth bearer token through Workload Identity Federation instead of `auth_token`. The provider exchanges an identity token from your platform (a CI OIDC token, a Kubernetes projected service account token, an Entra token...) for an Anthropic access token, and exchanges again before it expires, fetching a fresh identity token each time. Every attribute falls back to the environment variable the Anthropic SDKs read. Conflicts with `auth_token`; an exported ANTHROPIC_AUTH_TOKEN is ignored, with a warning. Give the federation rule a `token_lifetime_seconds` well above 120: the SDK refreshes within the last 120 seconds of a token's life, so a shorter lifetime refreshes, and fetches an identity token, on nearly every request. (see [below for nested schema](#nestedatt--federation))
+- `organization_id` (String) Expected organization ID. Falls back to ANTHROPIC_ORGANIZATION_ID. When set, every configured credential must resolve to this organization before resources can be managed.
+- `skip_organization_check` (Boolean) Skip organization identity verification, even when organization_id is configured. Defaults to false.
 
 <a id="nestedatt--federation"></a>
 ### Nested Schema for `federation`

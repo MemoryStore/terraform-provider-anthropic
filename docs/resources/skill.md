@@ -59,10 +59,30 @@ output "skill_source" {
 ### Read-Only
 
 - `created_at` (String) ISO 8601 timestamp of when the skill was created.
+- `file_hashes` (Map of String) SHA-256 file content hashes, keyed by path relative to the bundle root. Files must be available during planning and applying.
 - `id` (String) Unique skill identifier assigned by the API.
 - `latest_version` (String) The latest version identifier for the skill.
 - `source` (String) Source of the skill. For user-created skills this is `"custom"`.
 - `updated_at` (String) ISO 8601 timestamp of when the skill was last updated.
+
+
+## Local file tracking
+
+The provider computes `file_hashes` during planning using SHA-256 and paths relative
+to the bundle root. Local files must be readable during both plan and apply. Moving
+a bundle without changing its relative paths or contents keeps the hashes stable.
+If files change after a saved plan, apply fails before uploading; create a fresh plan.
+
+On the first apply after upgrading from a version without `file_hashes`, or after
+importing and attaching local files, the provider adopts the local hashes without
+uploading solely for adoption. This establishes a baseline; it does not verify that
+the existing remote bundle matches local contents. A content edit made before
+adoption cannot be detected. Later edits are tracked normally.
+
+Editing file contents or adding/removing files publishes a new version while keeping
+the skill ID. A local bundle relocation or `force_destroy` change only updates state.
+Changes to `display_title` still replace the skill. The skill resource tracks the
+latest version; use a separate skill-version resource when managing a pinned version.
 
 ## Import
 

@@ -49,10 +49,12 @@ type AnthropicProvider struct {
 
 // AnthropicProviderModel describes the provider data model.
 type AnthropicProviderModel struct {
-	ApiKey      types.String `tfsdk:"api_key"`
-	AdminApiKey types.String `tfsdk:"admin_api_key"`
-	AuthToken   types.String `tfsdk:"auth_token"`
-	Federation  types.Object `tfsdk:"federation"`
+	OrganizationID        types.String `tfsdk:"organization_id"`
+	SkipOrganizationCheck types.Bool   `tfsdk:"skip_organization_check"`
+	ApiKey                types.String `tfsdk:"api_key"`
+	AdminApiKey           types.String `tfsdk:"admin_api_key"`
+	AuthToken             types.String `tfsdk:"auth_token"`
+	Federation            types.Object `tfsdk:"federation"`
 }
 
 func (p *AnthropicProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -81,6 +83,14 @@ func (p *AnthropicProvider) Schema(ctx context.Context, req provider.SchemaReque
 					"Can also be set via the ANTHROPIC_AUTH_TOKEN environment variable.",
 			},
 			"federation": federationSchema(),
+			"organization_id": schema.StringAttribute{
+				Optional:    true,
+				Description: "Expected organization ID. Falls back to ANTHROPIC_ORGANIZATION_ID. When set, every configured credential must resolve to this organization before resources can be managed.",
+			},
+			"skip_organization_check": schema.BoolAttribute{
+				Optional:    true,
+				Description: "Skip organization identity verification, even when organization_id is configured. Defaults to false.",
+			},
 		},
 	}
 }
@@ -159,6 +169,13 @@ func (p *AnthropicProvider) Configure(ctx context.Context, req provider.Configur
 			option.WithFederationTokenProvider(federation.identity, federation.options),
 			httpClient,
 		)}
+	}
+
+	if !data.SkipOrganizationCheck.ValueBool() {
+		resp.Diagnostics.Append(checkOrganization(ctx, resolveCredential(data.OrganizationID, "ANTHROPIC_ORGANIZATION_ID"), pd)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 	}
 
 	resp.DataSourceData = pd

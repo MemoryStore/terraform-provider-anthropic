@@ -15,7 +15,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -28,6 +27,7 @@ import (
 // Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &SkillResource{}
 var _ resource.ResourceWithImportState = &SkillResource{}
+var _ resource.ResourceWithModifyPlan = &SkillResource{}
 
 func NewSkillResource() resource.Resource {
 	return &SkillResource{}
@@ -42,6 +42,7 @@ type SkillResource struct {
 type SkillResourceModel struct {
 	ID            types.String `tfsdk:"id"`
 	DisplayTitle  types.String `tfsdk:"display_title"`
+	FileHashes    types.Map    `tfsdk:"file_hashes"`
 	Files         types.List   `tfsdk:"files"`
 	ForceDestroy  types.Bool   `tfsdk:"force_destroy"`
 	CreatedAt     types.String `tfsdk:"created_at"`
@@ -73,8 +74,12 @@ func (r *SkillResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Required:            true,
 				ElementType:         types.StringType,
 				MarkdownDescription: "Local file paths to upload for the skill. Must include a `SKILL.md` file at the root of the directory.",
-				PlanModifiers:       []planmodifier.List{listplanmodifier.RequiresReplace()},
 				Validators:          []validator.List{listvalidator.SizeAtLeast(1)},
+			},
+			"file_hashes": schema.MapAttribute{
+				Computed:            true,
+				ElementType:         types.StringType,
+				MarkdownDescription: "SHA-256 file content hashes, keyed by path relative to the bundle root. Files must be available during planning and applying.",
 			},
 			"force_destroy": schema.BoolAttribute{
 				Optional: true,
@@ -140,6 +145,13 @@ func (r *SkillResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
+	hashes, diags := verifySkillFiles(ctx, data.Files, data.FileHashes)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.FileHashes = hashes
+
 	var filePaths []string
 	resp.Diagnostics.Append(data.Files.ElementsAs(ctx, &filePaths, false)...)
 	if resp.Diagnostics.HasError() {
@@ -192,8 +204,47 @@ func (r *SkillResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// Update is a no-op because all attributes are ForceNew.
-func (r *SkillResource) Update(_ context.Context, _ resource.UpdateRequest, _ *resource.UpdateResponse) {
+// Update publishes a version only for bundle changes. Hash adoption, path-only
+// relocation and force_destroy updates merely persist their planned state.
+func (r *SkillResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan, state SkillResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	hashes, diags := verifySkillFiles(ctx, plan.Files, plan.FileHashes)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.FileHashes = hashes
+	if skillNeedsUpload(plan.Files, state.Files, hashes, state.FileHashes) {
+		var files []string
+		resp.Diagnostics.Append(plan.Files.ElementsAs(ctx, &files, false)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		root, name, err := provretry.DeriveBundleRoot(files)
+		if err != nil {
+			resp.Diagnostics.AddError("Invalid skill bundle", err.Error())
+			return
+		}
+		version, err := provretry.MultipartUpload(ctx, files, root, name, func(readers []io.Reader) (*anthropic.BetaSkillVersionNewResponse, error) {
+			return r.client.Beta.Skills.Versions.New(ctx, state.ID.ValueString(), anthropic.BetaSkillVersionNewParams{Files: readers})
+		})
+		if err != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to publish skill version: %s", err))
+			return
+		}
+		// The version write is authoritative even if a subsequent skill GET lags it.
+		plan.LatestVersion = types.StringValue(version.Version)
+		plan.UpdatedAt = types.StringValue(version.CreatedAt)
+	} else {
+		plan.LatestVersion = state.LatestVersion
+		plan.UpdatedAt = state.UpdatedAt
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *SkillResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -264,7 +315,7 @@ func mapSkillNewResponseToState(skill *anthropic.BetaSkillNewResponse, data *Ski
 			data.DisplayTitle = types.StringNull()
 		}
 	}
-	// Do NOT update Files — the API does not return file paths (they are ForceNew).
+	// Do NOT update Files — the API does not return file paths.
 }
 
 func mapSkillGetResponseToState(skill *anthropic.BetaSkillGetResponse, data *SkillResourceModel) {
@@ -287,5 +338,5 @@ func mapSkillGetResponseToState(skill *anthropic.BetaSkillGetResponse, data *Ski
 			data.DisplayTitle = types.StringNull()
 		}
 	}
-	// Do NOT update Files — the API does not return file paths (they are ForceNew).
+	// Do NOT update Files — the API does not return file paths.
 }

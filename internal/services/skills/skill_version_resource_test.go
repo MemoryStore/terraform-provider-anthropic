@@ -76,7 +76,7 @@ func TestAccSkillVersionResource_basic(t *testing.T) {
 				ResourceName:            "anthropic_skill_version.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"files"},
+				ImportStateVerifyIgnore: []string{"file_hashes", "files"},
 				ImportStateIdFunc: func(s *terraform.State) (string, error) {
 					rs := s.RootModule().Resources["anthropic_skill_version.test"]
 					if rs == nil {
@@ -100,3 +100,38 @@ resource "anthropic_skill_version" "test" {
   files    = [%q]
 }
 `
+
+// A content edit replaces the immutable version even though files is unchanged.
+func TestAccSkillVersionResource_contentUpdate(t *testing.T) {
+	acctest.PreCheck(t)
+	parent := testAccSkillVersionFilePath(t)
+	file := testAccSkillVersionFilePath(t)
+	config := fmt.Sprintf(testAccSkillVersionResourceBasicConfig, parent, file)
+	var version string
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() { acctest.PreCheck(t) }, ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories, CheckDestroy: testAccCheckSkillVersionDestroyed,
+		Steps: []resource.TestStep{
+			{Config: config, Check: func(s *terraform.State) error {
+				version = s.RootModule().Resources["anthropic_skill_version.test"].Primary.Attributes["version"]
+				return nil
+			}},
+			{PreConfig: func() {
+				f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0600)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = f.Close() }()
+				if _, err := f.WriteString("\nNew version content.\n"); err != nil {
+					t.Fatal(err)
+				}
+			}, Config: config,
+				Check: func(s *terraform.State) error {
+					if s.RootModule().Resources["anthropic_skill_version.test"].Primary.Attributes["version"] == version {
+						return fmt.Errorf("content edit did not replace version")
+					}
+					return nil
+				}},
+			{Config: config},
+		},
+	})
+}

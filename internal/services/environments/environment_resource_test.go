@@ -6,6 +6,7 @@ package environments_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	acctest "github.com/ippontech/terraform-provider-anthropic/internal/acctest"
@@ -236,6 +237,25 @@ func TestAccEnvironmentResource_archiveOnDestroy(t *testing.T) {
 				ImportStateVerify:       true,
 				ImportStateVerifyIgnore: []string{"archive_on_destroy"},
 			},
+		},
+	})
+}
+
+// Exercise null key deletion and preserve the distinction between {} and an
+// omitted metadata block through real Terraform plan/apply/refresh cycles.
+func TestAccEnvironmentResource_metadataRemoval(t *testing.T) {
+	base := testAccEnvironmentResourceBasicConfig
+	withMetadata := func(metadata string) string {
+		return strings.TrimSuffix(strings.TrimSpace(base), "}") + "\n metadata = " + metadata + "\n}\n"
+	}
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() { acctest.PreCheck(t) }, ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories, CheckDestroy: testAccCheckEnvironmentDestroyed,
+		Steps: []resource.TestStep{
+			{Config: withMetadata(`{a="1",b="2"}`), Check: resource.TestCheckResourceAttr("anthropic_environment.test", "metadata.%", "2")},
+			{Config: withMetadata(`{a="1"}`), Check: resource.TestCheckResourceAttr("anthropic_environment.test", "metadata.%", "1")},
+			{Config: withMetadata(`{}`), Check: resource.TestCheckResourceAttr("anthropic_environment.test", "metadata.%", "0")},
+			{Config: withMetadata(`{a="1",b="2"}`)},
+			{Config: base, Check: resource.TestCheckNoResourceAttr("anthropic_environment.test", "metadata.%")},
 		},
 	})
 }

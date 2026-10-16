@@ -73,9 +73,29 @@ output "created_at" {
 - `created_at` (String) ISO 8601 timestamp of when the skill version was created.
 - `description` (String) Description of the skill version, extracted from the `SKILL.md` file.
 - `directory` (String) Top-level directory name extracted from the uploaded files.
+- `file_hashes` (Map of String) SHA-256 file content hashes, keyed by path relative to the bundle root. Files must be available during planning and applying.
 - `id` (String) Unique skill version identifier assigned by the API.
 - `name` (String) Human-readable name of the skill version, extracted from the `SKILL.md` file.
 - `version` (String) Version identifier for the skill, expressed as a Unix epoch timestamp (e.g., `"1759178010641129"`).
+
+
+## Local file tracking
+
+The provider computes `file_hashes` during planning using SHA-256 and paths relative
+to the bundle root. Local files must be readable during both plan and apply. Moving
+a bundle without changing its relative paths or contents keeps the hashes stable.
+If files change after a saved plan, apply fails before uploading; create a fresh plan.
+
+On the first apply after upgrading from a version without `file_hashes`, or after
+importing and attaching local files, the provider adopts the local hashes without
+uploading solely for adoption. This establishes a baseline; it does not verify that
+the existing remote bundle matches local contents. A content edit made before
+adoption cannot be detected. Later edits are tracked normally.
+
+Versions are immutable: editing contents or changing an established file list replaces
+the version. Deleting the old version may fail or affect agents pinned to it. Update
+pinned consumers as part of the change; consider `lifecycle { create_before_destroy = true }`
+to publish the replacement before deleting the old version.
 
 ## Import
 

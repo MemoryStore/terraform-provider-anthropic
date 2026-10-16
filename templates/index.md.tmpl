@@ -9,6 +9,32 @@ description: |-
 The Anthropic provider is used to interact with [Anthropic](https://anthropic.com) APIs.
 It allows you to manage and query Anthropic resources such as models.
 
+## Organization pinning
+
+Set `organization_id` in the provider block, or export `ANTHROPIC_ORGANIZATION_ID`,
+to require every configured credential to belong to the expected organization:
+
+```hcl
+provider "anthropic" {
+  organization_id = "00000000-0000-0000-0000-000000000000"
+}
+```
+
+The provider calls `GET /v1/organizations/me` once for each configured standard API
+key, admin API key, and OAuth token (including a token obtained through federation)
+during configuration. A mismatch or failed identity lookup stops the plan or apply
+before resource operations. Credentials are checked independently, so mixed-organization
+keys cannot pass merely because one key matches.
+
+Without a resolved organization ID there are no extra identity requests. To bypass
+checks explicitly, set `skip_organization_check = true`; this produces no recurring
+warning. The provider argument takes precedence over the environment variable; an
+unknown argument follows the existing credential fallback behavior.
+
+`ANTHROPIC_ORGANIZATION_ID` also fills `federation.organization_id` when federation
+is configured. The top-level pin checks the organization targeted by the resulting
+credential; it does not enable federation or replace its configuration.
+
 ## Authentication
 
 The provider accepts three distinct credentials, depending on which resources you manage. At least one must be configured; they are independent, and configuring one never substitutes for another.

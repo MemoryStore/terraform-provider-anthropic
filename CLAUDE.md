@@ -329,7 +329,12 @@ In a `ConfigValidator`, treat Unknown values (unresolved `var`/output refs at pl
 
 The Anthropic API's `metadata` field uses PATCH semantics: omitted keys are preserved, a key set to `null` is deleted. A plain `if !plan.Metadata.IsNull() { params.Metadata = ... }` therefore **cannot clear** keys removed in config — the API keeps them and the response overwrites the planned value → "Provider produced inconsistent result after apply".
 
-Use `buildMetadataPatch(ctx, plan, state)` (in `internal/services/vaults/vault_resource.go`): it upserts planned keys and sets keys removed since prior state to `nil`, returning a `map[string]any` sent via `params.SetExtraFields(map[string]any{"metadata": patch})` (the typed `map[string]string` field can't carry per-key nulls). The same drift applies to nullable scalars like `display_name`: send `param.Null[string]()` to clear, not an omitted field.
+Use `metadata.BuildPatch(ctx, plan, state)` (in `internal/metadata/patch.go`): it upserts planned keys and sets keys removed since prior state to `nil`, returning a `map[string]any` sent via `params.SetExtraFields(map[string]any{"metadata": patch})` (the typed `map[string]string` field can't carry per-key nulls). The same drift applies to nullable scalars like `display_name`: send `param.Null[string]()` to clear, not an omitted field.
+
+Metadata handling is shared in `internal/metadata.BuildPatch`. Agents and environments
+were probed in `terraform-tests` on 2026-10-15: both preserve omitted keys and `{}`, and
+remove keys explicitly set to null. Keep explicitly configured empty maps empty in state;
+an omitted block remains null. Unknown metadata defers patch construction.
 
 ### Read-after-write consistency on the vaults API
 
@@ -341,7 +346,7 @@ Left alone, Terraform's post-apply refresh lands inside that window and the next
 
 Two details of that loop are load-bearing. The ceiling (5s) and interval (200ms) are **consts passed as arguments**, not package-level `var`s: the unit tests need to shrink them to milliseconds, and the vaults acceptance tests exercise the real `Update` in the same test binary, so a mutable global would race the moment any vault test opted into `t.Parallel()` (`make test` runs with `-parallel=10`). And a `401`, `403` or `404` from the poll (`isTerminalVaultReadError`) bails out immediately instead of retrying to the deadline — a vault deleted out-of-band, or a key that lost access to it, will never converge, and retrying would stall the apply for seconds. Every other failure keeps polling, since it says nothing about visibility.
 
-Compare the two timestamps with a **non-strict** comparison — `!vault.UpdatedAt.Before(writtenAt)`, not `vault.UpdatedAt.After(writtenAt)`: an `updated_at` **equal** to the write timestamp must count as visible, or the loop always times out. `anthropic_vault_credential` has the same structural exposure but no observed flakiness, and its endpoint was not probed — check before assuming it needs the same wait.
+Compare the two timestamps with a **non-strict** comparison — `!vault.UpdatedAt.Before(writtenAt)`, not `vault.UpdatedAt.After(writtenAt)`: an `updated_at` **equal** to the write timestamp must count as visible, or the loop always times out. `anthropic_vault_credential` was probed on 2026-10-15: three display-name update trials, 100ms polling for 3s, zero stale reads (18 total); first reads were fresh at 388–425ms, and an immediate read after delete returned 404. No production credential wait is justified by that measurement; a shorter or intermittent window is not ruled out.
 
 #### WIF endpoints (probed 2026-09-08)
 
