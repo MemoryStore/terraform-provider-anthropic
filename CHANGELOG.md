@@ -1,3 +1,9 @@
+## [1.33.1](https://github.com/MemoryStore/terraform-provider-anthropic/compare/v1.33.0...v1.33.1) (2026-10-21)
+
+### 📚 Documentation
+
+* remove obsolete planning document ([#6](https://github.com/MemoryStore/terraform-provider-anthropic/issues/6)) ([8800cd1](https://github.com/MemoryStore/terraform-provider-anthropic/commit/8800cd1da504b6eccd22ec4c65f8c906fcc0a2dd))
+
 ## [1.33.0](https://github.com/MemoryStore/terraform-provider-anthropic/compare/v1.32.0...v1.33.0) (2026-10-16)
 
 ### ✨ Features
